@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stream Server Alerts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --surface: #151922;
+      --border: #2a3142;
+      --text: #e6eaf0;
+      --muted: #8b95a5;
+      --accent: #f59e0b;
+      --accent-dim: #b45309;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    .wrap {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 0 0 0.25rem 0;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .card h2 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 1rem 0;
+    }
+    label { display: block; margin-bottom: 0.5rem; color: var(--muted); font-size: 0.9rem; }
+    input[type="text"] {
+      width: 100%;
+      padding: 0.65rem 0.9rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.95rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+    }
+    input[type="text"]::placeholder { color: var(--muted); }
+    input:focus { outline: none; border-color: var(--accent); }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.35rem; }
+    .checks {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.6rem 1.5rem;
+      margin-top: 1rem;
+    }
+    .check label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0;
+      color: var(--text);
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .check input { width: auto; margin: 0; accent-color: var(--accent); }
+    .btn {
+      margin-top: 1.25rem;
+      padding: 0.7rem 1.4rem;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn:hover { background: var(--accent-dim); filter: brightness(1.05); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    #result { display: none; }
+    #result.visible { display: block; }
+    .scenario {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+    .conclusion {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      padding: 0.75rem;
+      background: rgba(245, 158, 11, 0.12);
+      border-left: 3px solid var(--accent);
+      border-radius: 4px;
+    }
+    .next-action {
+      padding: 0.75rem;
+      background: var(--bg);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .next-action strong { color: var(--text); }
+    .no-match { color: var(--muted); font-style: italic; }
+    .err {
+      color: var(--danger);
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+    .loading { opacity: 0.7; pointer-events: none; }
+    .agent-actions { margin-top: 1rem; }
+    .agent-actions h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 0.5rem 0; }
+    .agent-actions ul { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; color: var(--muted); }
+    .agent-actions li { margin-bottom: 0.35rem; }
+    .agent-actions li strong { color: var(--accent); font-weight: 500; }
+    .client-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 0.5rem; }
+    .client-table th, .client-table td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+    .client-table th { color: var(--muted); font-weight: 600; }
+    .download-row { margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .download-row .btn { margin-top: 0; }
+    .download-row .btn.secondary { background: var(--border); color: var(--text); }
+    .download-row .btn.secondary:hover { background: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Stream Server Alerts</h1>
+    <p class="sub">Run the alert engine: enter error codes and context, then get conclusion and next action.</p>
+
+    <div class="card">
+      <h2>Input</h2>
+      <label for="errorCodes">Error code(s)</label>
+      <input type="text" id="errorCodes" placeholder="e.g. 500, 503 (matches OpenSearch error_code field)" value="500 503">
+      <p class="hint">Space- or comma-separated codes; field set by OPENSEARCH_ERROR_CODE_FIELD in .env</p>
+
+      <label for="timeFilter" style="margin-top: 1rem;">Time window (mirrors OpenSearch Discover)</label>
+      <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-top: 0.35rem;">
+        <select id="timeFilter" style="padding: 0.5rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.95rem;">
+          <optgroup label="Common (Discover presets)">
+            <option value="15">Last 15 minutes</option>
+            <option value="30">Last 30 minutes</option>
+            <option value="60">Last 1 hour</option>
+            <option value="180">Last 3 hours</option>
+            <option value="360">Last 6 hours</option>
+            <option value="720">Last 12 hours</option>
+            <option value="1440">Last 24 hours</option>
+            <option value="2880">Last 2 days</option>
+            <option value="7200" selected>Last 5 days</option>
+            <option value="10080">Last 7 days</option>
+            <option value="20160">Last 14 days</option>
+            <option value="43200">Last 30 days</option>
+          </optgroup>
+          <optgroup label="Other">
+            <option value="custom">Custom (minutes)</option>
+          </optgroup>
+        </select>
+        <span id="customTimeWrap" style="display: none;">
+          <input type="number" id="customTimeMins" min="1" max="43200" value="7200" placeholder="Minutes" style="width: 6rem; padding: 0.5rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text);">
+          <span class="hint" style="margin-left: 0.25rem;">mins (max 43200 = 30 days)</span>
+        </span>
+      </div>
+      <p class="hint">Same relative range as Discover (now-X to now). Errors from OpenSearch in this window.</p>
+
+      <label style="margin-top: 1rem;">Context (optional — override step results)</label>
+      <div class="checks">
+        <div class="check"><input type="checkbox" id="calls_ok"><label for="calls_ok">Calls OK</label></div>
+        <div class="check"><input type="checkbox" id="calls_fail"><label for="calls_fail">Calls fail</label></div>
+        <div class="check"><input type="checkbox" id="restart"><label for="restart">Restart detected</label></div>
+        <div class="check"><input type="checkbox" id="auth_ok"><label for="auth_ok">Auth OK</label></div>
+        <div class="check"><input type="checkbox" id="auth_fail"><label for="auth_fail">Auth fail</label></div>
+      </div>
+
+      <div class="checks" style="margin-top: 1rem;">
+        <div class="check"><input type="checkbox" id="as_agent"><label for="as_agent">Run as agent (show planned actions)</label></div>
+      </div>
+
+      <button type="button" class="btn" id="run">Run</button>
+      <p class="err" id="apiErr" style="display: none;"></p>
+    </div>
+
+    <div class="card" id="result">
+      <h2>Result</h2>
+      <p class="error-codes-result" id="outErrorCodes"></p>
+      <p class="scenario" id="outScenario"></p>
+      <p class="conclusion" id="outConclusion"></p>
+      <p class="next-action" id="outAction"></p>
+      <div class="agent-actions" id="agentActions" style="display: none;">
+        <h3>Agent actions</h3>
+        <ul id="agentActionsList"></ul>
+      </div>
+      <div class="agent-actions" id="errorCountSection" style="display: none;">
+        <h3 id="errorCountTitle">Error count</h3>
+        <p class="hint" id="errorCountHint" style="margin: 0 0 0.5rem 0;"></p>
+        <table class="client-table" id="errorCountTable">
+          <thead><tr><th id="errorCountCol1">Error code</th><th>Count</th></tr></thead>
+          <tbody id="errorCountBody"></tbody>
+        </table>
+      </div>
+      <div class="agent-actions" id="opensearchSection" style="display: none;">
+        <h3>Errors from OpenSearch</h3>
+        <p class="hint" id="opensearchSummary"></p>
+        <ul id="opensearchErrorsList"></ul>
+      </div>
+      <div class="download-row" id="downloadRow" style="display: none;">
+        <button type="button" class="btn secondary" id="downloadCsv">Download logs (CSV)</button>
+        <button type="button" class="btn secondary" id="downloadJson">Download logs (JSON)</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const errorCodesEl = document.getElementById('errorCodes');
+    const runBtn = document.getElementById('run');
+    const apiErr = document.getElementById('apiErr');
+    const resultEl = document.getElementById('result');
+    const outErrorCodes = document.getElementById('outErrorCodes');
+    const outScenario = document.getElementById('outScenario');
+    const outConclusion = document.getElementById('outConclusion');
+    const outAction = document.getElementById('outAction');
+    const agentActionsEl = document.getElementById('agentActions');
+    const agentActionsListEl = document.getElementById('agentActionsList');
+    const opensearchSection = document.getElementById('opensearchSection');
+    const opensearchSummary = document.getElementById('opensearchSummary');
+    const opensearchErrorsList = document.getElementById('opensearchErrorsList');
+    const errorCountSection = document.getElementById('errorCountSection');
+    const errorCountTitle = document.getElementById('errorCountTitle');
+    const errorCountHint = document.getElementById('errorCountHint');
+    const errorCountCol1 = document.getElementById('errorCountCol1');
+    const errorCountBody = document.getElementById('errorCountBody');
+    const downloadRow = document.getElementById('downloadRow');
+    const timeFilterEl = document.getElementById('timeFilter');
+    const customTimeWrap = document.getElementById('customTimeWrap');
+    const customTimeMinsEl = document.getElementById('customTimeMins');
+    let lastResult = null;
+
+    timeFilterEl.addEventListener('change', () => {
+      customTimeWrap.style.display = timeFilterEl.value === 'custom' ? 'inline' : 'none';
+    });
+
+    function getTimeMinutes() {
+      const v = timeFilterEl.value;
+      if (v === 'custom') {
+        const n = parseInt(customTimeMinsEl.value, 10);
+        return isNaN(n) ? 60 : Math.max(1, Math.min(43200, n));
+      }
+      const n = parseInt(v, 10);
+      return isNaN(n) ? 60 : n;
+    }
+
+    function formatTimeWindow(mins) {
+      const m = Number(mins) || 60;
+      if (m >= 1440) return Math.round(m / 1440) + ' day' + (m >= 2880 ? 's' : '');
+      if (m >= 60) return Math.round(m / 60) + ' hour' + (m >= 120 ? 's' : '');
+      return m + ' min' + (m !== 1 ? 's' : '');
+    }
+    function parseErrorCodes(s) {
+      return s.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+    }
+
+    runBtn.addEventListener('click', async () => {
+      const raw = errorCodesEl.value.trim();
+      const codes = parseErrorCodes(raw);
+      if (codes.length === 0) {
+        apiErr.textContent = 'Enter at least one error code (e.g. 500, 503).';
+        apiErr.style.display = 'block';
+        return;
+      }
+      apiErr.style.display = 'none';
+      resultEl.classList.remove('visible');
+      runBtn.disabled = true;
+      runBtn.closest('.card').classList.add('loading');
+
+      const context = {};
+      if (document.getElementById('calls_ok').checked) context.calls_ok = true;
+      if (document.getElementById('calls_fail').checked) context.calls_fail = true;
+      if (document.getElementById('restart').checked) context.restart_detected = true;
+      if (document.getElementById('auth_ok').checked) context.auth_ok = true;
+      if (document.getElementById('auth_fail').checked) context.auth_fail = true;
+
+      const asAgent = document.getElementById('as_agent').checked;
+      const url = asAgent ? '/api/agent/run' : '/api/run';
+      const time_minutes = getTimeMinutes();
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ error_codes: codes, context, time_minutes, execute: false }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          apiErr.textContent = data.error || 'Request failed';
+          apiErr.style.display = 'block';
+          return;
+        }
+        if (!data.ok) {
+          apiErr.textContent = data.error || 'Engine error';
+          apiErr.style.display = 'block';
+          return;
+        }
+        const codesUsed = data.error_codes_used || [];
+        outErrorCodes.textContent = codesUsed.length ? 'Error codes (OpenSearch field): ' + codesUsed.join(', ') : '';
+        outErrorCodes.style.display = codesUsed.length ? 'block' : 'none';
+        outScenario.textContent = data.scenario_id ? `Scenario: ${data.scenario_id}` : (data.error || 'No scenario');
+        if (data.matched_rule && data.conclusion) {
+          outConclusion.textContent = data.conclusion;
+          outConclusion.classList.remove('no-match');
+        } else {
+          outConclusion.textContent = 'No decision rule matched.';
+          outConclusion.classList.add('no-match');
+        }
+        outAction.innerHTML = data.next_action
+          ? '<strong>Next action:</strong> ' + data.next_action
+          : '';
+        lastResult = data;
+        const ctx = data.context || {};
+        const byErrorCode = ctx.opensearch_by_error_code || [];
+        const byErrorName = ctx.opensearch_by_error_name || [];
+        if (byErrorCode.length) {
+          errorCountSection.style.display = 'block';
+          errorCountTitle.textContent = 'Error count by error code';
+          errorCountHint.textContent = 'From OpenSearch field: ' + (ctx.opensearch_error_code_field || 'error_code');
+          errorCountCol1.textContent = 'Error code';
+          errorCountBody.innerHTML = byErrorCode.map(b => '<tr><td>' + (b.code ?? '-') + '</td><td>' + (b.count ?? 0) + '</td></tr>').join('');
+        } else if (byErrorName.length) {
+          errorCountSection.style.display = 'block';
+          errorCountTitle.textContent = 'Error count by error name';
+          errorCountHint.textContent = 'From OpenSearch field: ' + (ctx.opensearch_error_name_field || 'rawLog.data.error.name');
+          errorCountCol1.textContent = 'Error name';
+          errorCountBody.innerHTML = byErrorName.map(b => '<tr><td>' + (b.name || '-') + '</td><td>' + (b.count ?? 0) + '</td></tr>').join('');
+        } else {
+          errorCountSection.style.display = 'none';
+        }
+        if (asAgent && data.actions && data.actions.length) {
+          agentActionsListEl.innerHTML = data.actions.map(a => {
+            const msg = a.outcome?.message || a.would_do || a.error || '';
+            const label = a.executed ? 'Executed' : 'Would do';
+            return '<li><strong>' + a.name + '</strong> (' + label + '): ' + msg + '</li>';
+          }).join('');
+          agentActionsEl.style.display = 'block';
+        } else {
+          agentActionsEl.style.display = 'none';
+        }
+        if (ctx.opensearch_available !== undefined) {
+          opensearchSection.style.display = 'block';
+          if (ctx.opensearch_error) {
+            opensearchSummary.textContent = 'OpenSearch error: ' + ctx.opensearch_error;
+            opensearchErrorsList.innerHTML = '';
+          } else {
+            const mins = ctx._time_minutes ?? 60;
+            const timeLabel = formatTimeWindow(mins);
+            const total = ctx.opensearch_total ?? ctx.error_count ?? 0;
+            const byErrorName = ctx.opensearch_by_error_name || [];
+            let summaryText = 'Total errors: ' + total + ' (last ' + timeLabel + ')';
+            const codeFieldLabel = ctx.opensearch_error_code_field || '';
+            const nameFieldLabel = ctx.opensearch_error_name_field || '';
+            if (codeFieldLabel) summaryText += ' · Field: ' + codeFieldLabel;
+            if (nameFieldLabel) summaryText += ' · Field: ' + nameFieldLabel;
+            if (byErrorName.length) {
+              summaryText += ' · By name: ' + byErrorName.map(b => (b.name || '-') + ' (' + (b.count ?? 0) + ')').join(', ');
+            }
+            if (ctx.opensearch_tenants?.length) {
+              summaryText += ' · Tenants: ' + (ctx.opensearch_tenants.map(t => t.name || t).join(', ') || ctx.impacted_tenants?.join(', '));
+            }
+            opensearchSummary.textContent = summaryText;
+            const sample = ctx.opensearch_sample_errors || [];
+            const sampleRows = sample.length ? sample.slice(0, 10).map(e => {
+              const ts = e.timestamp || '';
+              const nameOrCode = (e.error_name != null ? e.error_name : e.error_code != null ? e.error_code : '');
+              const tenant = e.tenant_name || '';
+              const msg = (e.message || '').toString().slice(0, 120);
+              return '<li><strong>' + [ts, nameOrCode, tenant].filter(Boolean).join(' · ') + '</strong>' + (msg ? ': ' + msg : '') + '</li>';
+            }).join('') : '';
+            const noSampleHint = total === 0
+              ? 'No errors in the last ' + timeLabel + ' in this index.'
+              : 'No sample returned. Set OPENSEARCH_ERROR_NAME_FIELD (e.g. rawLog.data.error.name) in .env if your index uses different field names.';
+            opensearchErrorsList.innerHTML = sampleRows || '<li class="hint">' + noSampleHint + '</li>';
+          }
+        } else {
+          opensearchSection.style.display = 'none';
+          errorCountSection.style.display = 'none';
+        }
+        const hasDownload = (data.context?.opensearch_by_error_code?.length) || (data.context?.opensearch_by_error_name?.length) || (data.context?.opensearch_sample_errors?.length);
+        downloadRow.style.display = hasDownload ? 'flex' : 'none';
+        resultEl.classList.add('visible');
+      } catch (e) {
+        apiErr.textContent = e.message || 'Network error';
+        apiErr.style.display = 'block';
+      } finally {
+        runBtn.disabled = false;
+        runBtn.closest('.card').classList.remove('loading');
+      }
+    });
+
+    function downloadFile(content, filename, mime) {
+      const a = document.createElement('a');
+      a.href = 'data:' + mime + ';charset=utf-8,' + encodeURIComponent(content);
+      a.download = filename;
+      a.click();
+    }
+
+    document.getElementById('downloadCsv').addEventListener('click', () => {
+      const byErrorCode = lastResult?.context?.opensearch_by_error_code || [];
+      const byErrorName = lastResult?.context?.opensearch_by_error_name || [];
+      const sample = lastResult?.context?.opensearch_sample_errors || [];
+      if (sample.length) {
+        const header = 'timestamp,error_code,tenant_name,message\n';
+        const rows = sample.map(e => [
+          (e.timestamp != null ? e.timestamp : ''),
+          (e.error_code != null ? e.error_code : e.error_name != null ? e.error_name : ''),
+          (e.tenant_name != null ? String(e.tenant_name).replace(/"/g, '""') : ''),
+          (e.message != null ? String(e.message).replace(/"/g, '""').replace(/\n/g, ' ') : '')
+        ].map(v => '"' + v + '"').join(',')).join('\n');
+        downloadFile(header + rows, 'stream_errors_log.csv', 'text/csv');
+        return;
+      }
+      if (byErrorCode.length) {
+        const header = 'Error code,Count\n';
+        const rows = byErrorCode.map(b => (b.code ?? '') + ',' + (b.count ?? 0)).join('\n');
+        downloadFile(header + rows, 'error_count_by_code.csv', 'text/csv');
+      } else if (byErrorName.length) {
+        const header = 'Error name,Count\n';
+        const rows = byErrorName.map(b => '"' + (b.name || '').replace(/"/g, '""') + '",' + (b.count ?? 0)).join('\n');
+        downloadFile(header + rows, 'error_count_by_name.csv', 'text/csv');
+      }
+    });
+
+    document.getElementById('downloadJson').addEventListener('click', () => {
+      if (!lastResult) return;
+      const payload = {
+        scenario_id: lastResult.scenario_id,
+        conclusion: lastResult.conclusion,
+        next_action: lastResult.next_action,
+        total_error_count: lastResult.total_error_count,
+        error_count_by_code: lastResult.context?.opensearch_by_error_code || [],
+        error_count_by_name: lastResult.context?.opensearch_by_error_name || [],
+        sample_errors: lastResult.context?.opensearch_sample_errors || [],
+        exported_at: new Date().toISOString()
+      };
+      downloadFile(JSON.stringify(payload, null, 2), 'stream_errors_log.json', 'application/json');
+    });
+  </script>
+</body>
+</html>

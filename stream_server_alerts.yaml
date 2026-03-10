@@ -1,0 +1,42 @@
+alert_name: stream_server_alerts
+
+scenarios:
+  - id: server_errors
+    match:
+      error_codes: [500, 503]
+    steps:
+      - check_opensearch
+      - get_error_count
+      - get_impacted_tenants
+      - check_prod_connectivity
+      - check_bot_restarts
+      - check_twilio_logs
+      - escalate_devops
+
+  - id: auth_errors
+    match:
+      error_codes: [400]
+    steps:
+      - check_opensearch
+      - get_error_count
+      - get_impacted_tenants
+      - validate_auth_flow
+      - inspect_apt_logs
+      - escalate_dev
+
+decision_rules:
+  - if: "500_or_503_spike and calls_connect_successfully and restart_detected"
+    conclusion: "likely transient bot restart / infra instability"
+    next_action: "collect restart cause, pod metrics, impacted CU, time window"
+
+  - if: "500_or_503_spike and calls_fail"
+    conclusion: "active production degradation"
+    next_action: "check Twilio logs, open bridge, escalate immediately"
+
+  - if: "400_spike and auth_successful"
+    conclusion: "possible transient or tenant-specific auth/request issue"
+    next_action: "monitor logs, collect RCA data"
+
+  - if: "400_spike and auth_failure"
+    conclusion: "authentication or integration-manager issue"
+    next_action: "escalate with impacted CUs and auth evidence"

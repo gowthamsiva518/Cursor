@@ -1,0 +1,4 @@
+PyYAML>=6.0
+Flask>=3.0
+opensearch-py>=2.0
+python-dotenv>=1.0
