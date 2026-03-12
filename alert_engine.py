@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +94,7 @@ def _query_opensearch_once(ctx: dict[str, Any], time_minutes: int | None = None)
         ctx["opensearch_error_name_field"] = result.get("error_name_field", "")
         ctx["opensearch_by_error_code"] = result.get("by_error_code", [])
         ctx["opensearch_error_code_field"] = result.get("error_code_field", "")
+        ctx["opensearch_by_tenant_error_code"] = result.get("by_tenant_error_code", [])
         if result.get("error"):
             ctx["opensearch_error"] = result["error"]
     except Exception as e:
@@ -145,20 +147,97 @@ def step_check_prod_connectivity(ctx: dict[str, Any]) -> None:
 
 
 def step_check_bot_restarts(ctx: dict[str, Any]) -> None:
-    """Detect bot/pod restarts in time window; sets restart_detected."""
+    """Detect bot/pod restarts from Lens (Kubernetes API) and OpenSearch logs."""
     print("  [step] check_bot_restarts")
     sim = _get_simulate(ctx, "restart_detected")
     if sim is not None:
         ctx["restart_detected"] = bool(sim)
-    else:
-        ctx.setdefault("restart_detected", True)  # demo: assume restart detected
+        return
+
+    time_minutes = max(1, min(43200, int(ctx.get("_time_minutes", 60))))
+    restart_detected = False
+
+    # 1) Query Lens / Kubernetes for pod restart data
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=time_minutes)
+
+    try:
+        from lens_client import query_pod_restarts
+        k8s_result = query_pod_restarts(time_minutes=time_minutes)
+        if k8s_result is not None:
+            pods = k8s_result.get("pods", [])
+            ctx["lens_pod_restarts"] = pods
+            ctx["lens_total_restarts"] = k8s_result.get("total_restarts", 0)
+            ctx["lens_pods_with_restarts"] = k8s_result.get("pods_with_restarts", 0)
+            ctx["lens_available"] = "error" not in k8s_result
+            if k8s_result.get("error"):
+                ctx["lens_error"] = k8s_result["error"]
+
+            # Age-based detection: any pod whose created_at is within the
+            # time window is considered recently restarted/recreated.
+            for p in pods:
+                created = p.get("created_at")
+                if not created:
+                    continue
+                try:
+                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    if created_dt >= cutoff:
+                        restart_detected = True
+                        break
+                except Exception:
+                    pass
+
+            if not restart_detected and k8s_result.get("total_restarts", 0) > 0:
+                restart_detected = True
+        else:
+            ctx["lens_available"] = False
+            ctx["lens_pod_restarts"] = []
+    except Exception as e:
+        ctx["lens_available"] = False
+        ctx["lens_pod_restarts"] = []
+        ctx["lens_error"] = str(e)
+
+    ctx["restart_detected"] = restart_detected
 
 
 def step_check_twilio_logs(ctx: dict[str, Any]) -> None:
-    """Inspect Twilio logs for errors/causes."""
+    """Fetch Twilio call logs and connection status within the time window."""
     print("  [step] check_twilio_logs")
-    # TODO: call Twilio API or log search
-    ctx.setdefault("twilio_log_summary", "not_checked")
+    time_minutes = max(1, min(43200, int(ctx.get("_time_minutes", 60))))
+
+    try:
+        from twilio_client import query_call_logs, check_twilio_connection
+
+        conn = check_twilio_connection()
+        ctx["twilio_available"] = conn.get("connected", False)
+        if not conn.get("connected"):
+            ctx["twilio_error"] = conn.get("error", "unknown")
+            ctx["twilio_calls"] = []
+            ctx["twilio_log_summary"] = "not_configured"
+            return
+
+        result = query_call_logs(time_minutes=time_minutes)
+        if result.get("error"):
+            ctx["twilio_error"] = result["error"]
+
+        ctx["twilio_calls"] = result.get("calls", [])
+        ctx["twilio_total_calls"] = result.get("total_calls", 0)
+        ctx["twilio_failed_calls"] = result.get("failed_calls", 0)
+        ctx["twilio_error_summary"] = result.get("error_summary", {})
+        ctx["twilio_phone_status"] = result.get("phone_status", [])
+        ctx["twilio_accounts_checked"] = result.get("accounts_checked", [])
+        ctx["twilio_log_summary"] = "checked"
+
+    except ImportError:
+        ctx["twilio_available"] = False
+        ctx["twilio_error"] = "twilio package not installed"
+        ctx["twilio_calls"] = []
+        ctx["twilio_log_summary"] = "not_configured"
+    except Exception as e:
+        ctx["twilio_available"] = False
+        ctx["twilio_error"] = str(e)
+        ctx["twilio_calls"] = []
+        ctx["twilio_log_summary"] = "error"
 
 
 def step_escalate_devops(ctx: dict[str, Any]) -> None:
@@ -264,6 +343,446 @@ def evaluate_rules(config: dict[str, Any], context: dict[str, Any]) -> dict[str,
 
 
 # -----------------------------------------------------------------------------
+# RCA generation
+# -----------------------------------------------------------------------------
+
+def generate_rca(ctx: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build an automated RCA based on:
+      1. Top 3 tenants by error count
+      2. Whether bot engine restarts were detected
+      3. Error log patterns (when no restarts found)
+    Returns { top_tenants, restart_detected, rca_summary, rca_details[] }.
+    """
+    by_tenant_code = ctx.get("opensearch_by_tenant_error_code") or []
+    total_errors = ctx.get("opensearch_total") or ctx.get("error_count") or 0
+
+    # --- All tenants by aggregated error count ---
+    tenant_totals: dict[str, int] = {}
+    for row in by_tenant_code:
+        name = row.get("tenant_name") or "-"
+        tenant_totals[name] = tenant_totals.get(name, 0) + (row.get("count") or 0)
+    sorted_tenants = sorted(tenant_totals.items(), key=lambda x: x[1], reverse=True)
+    top_tenants = [{"tenant_name": t[0], "total_errors": t[1]} for t in sorted_tenants]
+
+    # --- Restart analysis ---
+    # All pods returned by lens_client are already filtered to the time window.
+    # If a tenant's namespace (e.g. {tenant}-prod) matches any pod namespace in
+    # the Lens results, we consider that tenant's bot engine was restarted.
+    lens_pods = ctx.get("lens_pod_restarts") or []
+    time_minutes = max(1, min(43200, int(ctx.get("_time_minutes", 60))))
+
+    # Build namespace -> pod lookup from ALL Lens pods (already time-filtered)
+    ns_pod_map: dict[str, list[dict[str, Any]]] = {}
+    for p in lens_pods:
+        ns = (p.get("namespace") or "").lower()
+        ns_pod_map.setdefault(ns, []).append(p)
+
+    # Enrich each top tenant: error codes + matching K8s restart info
+    # Match tenant to namespace flexibly: any namespace starting with the
+    # tenant name is considered a match (e.g. tenant "dupaco" matches
+    # namespace "dupaco-aicc-prod").
+    for tt in top_tenants:
+        tenant = tt["tenant_name"]
+        codes_for_tenant = [
+            row for row in by_tenant_code if row.get("tenant_name") == tenant
+        ]
+        tt["error_codes"] = [
+            {"code": r.get("error_code"), "count": r.get("count", 0)} for r in codes_for_tenant
+        ]
+        tenant_lower = tenant.lower()
+        matched_pods: list[dict[str, Any]] = []
+        matched_ns = ""
+        for ns, pods_in_ns in ns_pod_map.items():
+            if ns.startswith(tenant_lower):
+                matched_pods.extend(pods_in_ns)
+                matched_ns = ns
+        tt["namespace"] = matched_ns or f"{tenant_lower}-prod"
+        tt["restart_pods"] = [
+            {"name": p.get("name", ""), "age": p.get("age", ""),
+             "restart_count": p.get("restart_count", 0),
+             "created_at": p.get("created_at", "")}
+            for p in matched_pods
+        ]
+        tt["restart_count"] = len(matched_pods)
+        tt["restart_detected"] = len(matched_pods) > 0
+
+    tenants_with_restarts = [t for t in top_tenants if t["restart_detected"]]
+    tenants_without_restarts = [t for t in top_tenants if not t["restart_detected"]]
+
+    rca_details: list[str] = []
+
+    if tenants_with_restarts:
+        rca_summary = "Bot engine pod restarts correlated with tenant errors."
+        for t in tenants_with_restarts:
+            pod_info = ", ".join(
+                f"{p['name']} (age {p['age']})" for p in t["restart_pods"][:3]
+            )
+            rca_details.append(
+                f"Tenant \"{t['tenant_name']}\" ({t['total_errors']} errors) — "
+                f"namespace \"{t['namespace']}\" has {t['restart_count']} matching pod(s): {pod_info}. "
+                f"Pod restart is the likely cause of these errors."
+            )
+        _no_restart_tenants = list(tenants_without_restarts)
+        rca_details.append(
+            "Matching pods in the tenant namespace indicate a restart/rollout. "
+            "In-flight requests fail with 5xx errors when pods restart. "
+            "Investigate pod restart reason (OOMKilled, CrashLoopBackOff, deployment rollout)."
+        )
+    elif lens_pods:
+        rca_summary = "Bot engine pods found but not matching top tenant namespaces."
+        all_ns = sorted(ns_pod_map.keys())[:5]
+        rca_details.append(
+            f"Pods found in namespace(s): {', '.join(all_ns)}."
+        )
+        if top_tenants:
+            expected = ", ".join(f"{t['tenant_name']} → {t['namespace']}" for t in top_tenants)
+            rca_details.append(f"Top error tenants map to: {expected} (no matching pods there).")
+        _no_restart_tenants = list(top_tenants)
+    else:
+        rca_summary = "No bot engine pod restarts detected — analysing error logs for root cause."
+        _no_restart_tenants = list(top_tenants)
+
+    # Common analysis for tenants without restarts or when no restarts at all
+    if not tenants_with_restarts:
+        by_error_code = ctx.get("opensearch_by_error_code") or []
+
+        if top_tenants:
+            tenant_list = ", ".join(
+                f"{t['tenant_name']} ({t['total_errors']} errors)" for t in top_tenants
+            )
+            rca_details.append(f"Top impacted tenants: {tenant_list}.")
+
+        if by_error_code:
+            code_breakdown = ", ".join(
+                f"{b.get('code', '?')} ({b.get('count', 0)})" for b in by_error_code[:5]
+            )
+            rca_details.append(f"Error code distribution: {code_breakdown}.")
+
+    # --- Bot engine log analysis via context_id (primary log analysis) ---
+    bot_engine_findings: list[dict[str, Any]] = []
+    bot_engine_error = ""
+    bot_engine_analyzed = False
+    sample = ctx.get("opensearch_sample_errors") or []
+    context_ids = list(set(
+        str(e.get("context_id") or "") for e in sample if e.get("context_id")
+    ))
+    if context_ids:
+        try:
+            from opensearch_client import query_bot_engine_logs
+            time_minutes = max(1, min(43200, int(ctx.get("_time_minutes", 60))))
+            be_result = query_bot_engine_logs(context_ids, time_minutes=time_minutes)
+            if be_result is not None:
+                ctx["bot_engine_logs_total"] = be_result.get("total", 0)
+                ctx["bot_engine_logs"] = be_result.get("logs", [])
+                ctx["bot_engine_error_logs"] = be_result.get("error_logs", [])
+                if be_result.get("error"):
+                    bot_engine_error = be_result["error"]
+
+                error_logs = be_result.get("error_logs", [])
+                if error_logs:
+                    bot_engine_analyzed = True
+                    rca_details.append(
+                        f"Bot engine log analysis: found {len(error_logs)} error(s) "
+                        f"across {len(context_ids)} context ID(s)."
+                    )
+                    be_patterns: dict[str, int] = {}
+                    for lg in error_logs:
+                        msg = str(lg.get("message") or lg.get("error_stack") or "")[:200].strip()
+                        if not msg:
+                            continue
+                        key = msg.split("\n")[0][:120]
+                        be_patterns[key] = be_patterns.get(key, 0) + 1
+                    if be_patterns:
+                        sorted_be = sorted(be_patterns.items(), key=lambda x: x[1], reverse=True)
+                        rca_details.append("Bot engine error patterns:")
+                        for pattern, count in sorted_be[:5]:
+                            rca_details.append(f"  \u2022 ({count}x) {pattern}")
+
+                    be_event_types: dict[str, int] = {}
+                    for lg in error_logs:
+                        evt = str(lg.get("event_type") or "").strip()
+                        if evt:
+                            be_event_types[evt] = be_event_types.get(evt, 0) + 1
+                    if be_event_types:
+                        sorted_evt = sorted(be_event_types.items(), key=lambda x: x[1], reverse=True)
+                        evt_str = ", ".join(f"{e} ({c})" for e, c in sorted_evt[:5])
+                        rca_details.append(f"Bot engine error event types: {evt_str}")
+
+                    bot_engine_findings = [
+                        {
+                            "context_id": lg.get("context_id", ""),
+                            "tenant_name": lg.get("tenant_name", ""),
+                            "timestamp": lg.get("timestamp", ""),
+                            "level": lg.get("level", ""),
+                            "event_type": lg.get("event_type", ""),
+                            "message": str(lg.get("message", ""))[:300],
+                        }
+                        for lg in error_logs[:20]
+                    ]
+                elif be_result.get("total", 0) > 0:
+                    rca_details.append(
+                        f"Bot engine logs: {be_result['total']} log(s) found for "
+                        f"{len(context_ids)} context ID(s), but none at error level."
+                    )
+                else:
+                    rca_details.append(
+                        f"Bot engine logs: no logs found for {len(context_ids)} context ID(s) "
+                        f"in the selected time window."
+                    )
+            else:
+                rca_details.append(
+                    "Bot engine log lookup skipped (OPENSEARCH_BOT_ENGINE_INDEX not configured)."
+                )
+        except Exception as e:
+            bot_engine_error = str(e)
+            rca_details.append(f"Bot engine log lookup failed: {bot_engine_error}")
+
+    # --- Bot engine analysis via request_id → connection_id → connectionId ---
+    bot_engine_error_codes: dict[str, int] = {}
+    bot_engine_conn_findings: list[dict[str, Any]] = []
+    request_ids = list(set(
+        str(e.get("request_id") or "") for e in sample if e.get("request_id")
+    ))
+    if request_ids:
+        try:
+            from opensearch_client import lookup_connection_ids, query_bot_engine_by_connection
+            conn_map = lookup_connection_ids(request_ids)
+            connection_ids = list(set(conn_map.values()))
+            ctx["rca_request_to_connection"] = conn_map
+
+            if connection_ids:
+                time_minutes = max(1, min(43200, int(ctx.get("_time_minutes", 60))))
+                be_conn_result = query_bot_engine_by_connection(
+                    connection_ids, time_minutes=time_minutes
+                )
+                if be_conn_result and not be_conn_result.get("error"):
+                    bot_engine_error_codes = be_conn_result.get("error_codes", {})
+                    be_conn_logs = be_conn_result.get("logs", [])
+                    ctx["bot_engine_conn_logs"] = be_conn_logs
+                    ctx["bot_engine_error_codes"] = bot_engine_error_codes
+
+                    if bot_engine_error_codes:
+                        bot_engine_analyzed = True
+                        sorted_codes = sorted(
+                            bot_engine_error_codes.items(), key=lambda x: x[1], reverse=True
+                        )
+                        codes_str = ", ".join(f"{code} ({cnt}x)" for code, cnt in sorted_codes)
+                        rca_details.append(
+                            f"Bot engine error codes (via connection_id): {codes_str}"
+                        )
+                        # Build per-connection detail
+                        conn_error_map: dict[str, list[str]] = {}
+                        for lg in be_conn_logs:
+                            cid = lg.get("connection_id", "")
+                            ec = lg.get("error_code", "")
+                            if cid and ec:
+                                conn_error_map.setdefault(cid, []).append(ec)
+
+                        rca_details.append(
+                            f"Analysed {len(connection_ids)} connection(s) from "
+                            f"{len(request_ids)} request ID(s). "
+                            f"Found {be_conn_result.get('total', 0)} bot engine error(s)."
+                        )
+
+                        # Error message patterns from bot engine
+                        be_msg_patterns: dict[str, int] = {}
+                        for lg in be_conn_logs:
+                            msg = str(lg.get("message") or lg.get("error_stack") or "")[:200].strip()
+                            if not msg:
+                                continue
+                            key = msg.split("\n")[0][:120]
+                            be_msg_patterns[key] = be_msg_patterns.get(key, 0) + 1
+                        if be_msg_patterns:
+                            sorted_msgs = sorted(be_msg_patterns.items(), key=lambda x: x[1], reverse=True)
+                            rca_details.append("Bot engine error messages (by connection_id):")
+                            for pattern, count in sorted_msgs[:5]:
+                                rca_details.append(f"  \u2022 ({count}x) {pattern}")
+
+                        bot_engine_conn_findings = [
+                            {
+                                "connection_id": lg.get("connection_id", ""),
+                                "tenant_name": lg.get("tenant_name", ""),
+                                "timestamp": lg.get("timestamp", ""),
+                                "error_code": lg.get("error_code", ""),
+                                "event_type": lg.get("event_type", ""),
+                                "message": str(lg.get("message", ""))[:300],
+                            }
+                            for lg in be_conn_logs[:30]
+                        ]
+                    elif be_conn_result.get("total", 0) == 0:
+                        rca_details.append(
+                            f"Bot engine (connection_id): no errors with rawLog.data.error.code "
+                            f"found for {len(connection_ids)} connection(s)."
+                        )
+                elif be_conn_result and be_conn_result.get("error"):
+                    rca_details.append(
+                        f"Bot engine connection lookup error: {be_conn_result['error']}"
+                    )
+            else:
+                rca_details.append(
+                    f"No connection_ids found in conversation logs for "
+                    f"{len(request_ids)} request ID(s)."
+                )
+        except Exception as e:
+            rca_details.append(f"Bot engine connection analysis failed: {e}")
+
+    # Fallback: stream-server error patterns only if bot engine analysis didn't find anything
+    if not bot_engine_analyzed and not tenants_with_restarts:
+        error_patterns: dict[str, int] = {}
+        for err in sample:
+            msg = str(err.get("message") or err.get("error_stack") or "")[:200].strip()
+            if not msg:
+                continue
+            key = msg.split("\n")[0][:120]
+            error_patterns[key] = error_patterns.get(key, 0) + 1
+
+        if error_patterns:
+            sorted_patterns = sorted(error_patterns.items(), key=lambda x: x[1], reverse=True)
+            rca_details.append("Common error patterns from stream-server logs:")
+            for pattern, count in sorted_patterns[:5]:
+                rca_details.append(f"  \u2022 ({count}x) {pattern}")
+
+        by_error_code = ctx.get("opensearch_by_error_code") or []
+        if not error_patterns and not by_error_code:
+            rca_details.append(
+                "No error log samples available for deeper analysis. "
+                "Download error logs (CSV) for manual inspection."
+            )
+
+    if total_errors > 0:
+        rca_details.append(
+            "Recommended: review full error logs for stack traces, "
+            "check recent deployments, and verify external service dependencies."
+        )
+
+    top_names = ", ".join(t["tenant_name"] for t in top_tenants) if top_tenants else ""
+    if bot_engine_error_codes:
+        codes_str = ", ".join(
+            f"{c} ({n}x)" for c, n in sorted(bot_engine_error_codes.items(), key=lambda x: -x[1])
+        )
+        bot_engine_analysis = f"Errors found for top tenants ({top_names}): {codes_str}"
+    elif top_names:
+        bot_engine_analysis = f"No errors found in bot engine logs for the impacted tenants ({top_names})"
+    else:
+        bot_engine_analysis = "No tenant data available for bot engine analysis."
+
+    # Append detail for tenants that had no matching pods, with
+    # per-tenant bot engine analysis.
+    for t in _no_restart_tenants:
+        tname = t["tenant_name"]
+        if bot_engine_error_codes:
+            tenant_codes = ", ".join(
+                f"{c} ({n}x)" for c, n in sorted(bot_engine_error_codes.items(), key=lambda x: -x[1])
+            )
+            be_line = f"Errors found in bot engine logs: {tenant_codes}"
+        else:
+            be_line = f"No errors found in bot engine logs for {tname}"
+        rca_details.append(
+            f"Tenant \"{tname}\" ({t['total_errors']} errors) — "
+            f"namespace \"{t['namespace']}\" has no matching pods. "
+            f"Bot Engine Analysis: {be_line}"
+        )
+
+    restart_detected = len(lens_pods) > 0
+    total_restarts = len(lens_pods)
+
+    # --- Twilio analysis ---
+    twilio_total = ctx.get("twilio_total_calls", 0)
+    twilio_failed = ctx.get("twilio_failed_calls", 0)
+    twilio_error_summary = ctx.get("twilio_error_summary") or {}
+    twilio_phone_status = ctx.get("twilio_phone_status") or []
+    twilio_accounts_checked = ctx.get("twilio_accounts_checked") or []
+    twilio_available = ctx.get("twilio_available", False)
+    twilio_calls = ctx.get("twilio_calls") or []
+
+    twilio_failed_list = [c for c in twilio_calls if c.get("error_code") or c.get("status") in ("failed", "busy", "no-answer", "canceled")]
+
+    # Build namespace → error call count from failed Twilio calls only
+    twilio_ns_error_counts: dict[str, int] = {}
+    for c in twilio_failed_list:
+        ns = (c.get("namespace") or "").strip().lower()
+        if ns:
+            twilio_ns_error_counts[ns] = twilio_ns_error_counts.get(ns, 0) + 1
+
+    # Enrich each tenant with Twilio error count using flexible matching
+    for tt in top_tenants:
+        tenant_lower = tt["tenant_name"].lower()
+        twilio_err = 0
+        for ns, cnt in twilio_ns_error_counts.items():
+            if ns.startswith(tenant_lower):
+                twilio_err += cnt
+        tt["twilio_error_count"] = twilio_err
+
+    # Aggregate Twilio error codes
+    twilio_error_codes: dict[str, int] = {}
+    for c in twilio_failed_list:
+        ec = c.get("error_code")
+        if ec:
+            key = str(ec)
+            twilio_error_codes[key] = twilio_error_codes.get(key, 0) + 1
+
+    if twilio_available and twilio_total > 0:
+        if twilio_failed > 0:
+            status_str = ", ".join(f"{s}: {n}" for s, n in sorted(twilio_error_summary.items(), key=lambda x: -x[1]))
+            error_code_str = ""
+            if twilio_error_codes:
+                error_code_str = " Error codes: " + ", ".join(
+                    f"{c} ({n}x)" for c, n in sorted(twilio_error_codes.items(), key=lambda x: -x[1])
+                )
+            twilio_analysis = (
+                f"Twilio issues detected — {twilio_failed} failed out of {twilio_total} calls. "
+                f"Status breakdown: {status_str}.{error_code_str}"
+            )
+            rca_details.append(
+                f"Twilio Analysis: {twilio_failed}/{twilio_total} calls failed within the time window. "
+                f"Call status breakdown: {status_str}. "
+                "Failed calls may indicate telephony-side issues impacting users."
+            )
+        else:
+            twilio_analysis = f"No Twilio call failures — {twilio_total} calls all successful."
+    elif twilio_available:
+        twilio_analysis = "No Twilio calls found within the time window."
+    else:
+        twilio_analysis = ctx.get("twilio_error") or "Twilio not configured."
+
+    rca_result = {
+        "top_tenants": top_tenants,
+        "restart_detected": restart_detected,
+        "total_restarts": total_restarts,
+        "total_errors": total_errors,
+        "rca_summary": rca_summary,
+        "rca_details": rca_details,
+        "bot_engine_analysis": bot_engine_analysis,
+        "twilio_analysis": twilio_analysis,
+        "twilio_total_calls": twilio_total,
+        "twilio_failed_calls": twilio_failed,
+        "twilio_error_summary": twilio_error_summary,
+        "twilio_phone_status": twilio_phone_status,
+        "twilio_accounts_checked": twilio_accounts_checked,
+        "twilio_error_codes": twilio_error_codes,
+        "twilio_failed_list": twilio_failed_list[:50],
+        "twilio_ns_error_counts": twilio_ns_error_counts,
+        "context_ids_checked": context_ids,
+        "bot_engine_findings": bot_engine_findings,
+        "bot_engine_error": bot_engine_error,
+        "bot_engine_error_codes": bot_engine_error_codes,
+        "bot_engine_conn_findings": bot_engine_conn_findings,
+    }
+
+    # --- AI-powered summary ---
+    try:
+        from ai_summarizer import summarize_rca
+        ai_summary = summarize_rca(rca_result)
+        if ai_summary:
+            rca_result["ai_summary"] = ai_summary
+    except Exception:
+        pass
+
+    return rca_result
+
+
+# -----------------------------------------------------------------------------
 # High-level run
 # -----------------------------------------------------------------------------
 
@@ -287,15 +806,17 @@ def run(
     try:
         config = load_config(config_path)
         scenario = find_scenario(config, error_codes)
+
+        DEFAULT_STEPS = [
+            "check_opensearch",
+            "get_error_count",
+            "get_impacted_tenants",
+            "check_bot_restarts",
+            "check_twilio_logs",
+        ]
+
         if not scenario:
-            return {
-                "scenario_id": None,
-                "conclusion": None,
-                "next_action": None,
-                "context": initial_context or {},
-                "matched_rule": False,
-                "error": "no matching scenario for error_codes",
-            }
+            scenario = {"id": "general", "steps": DEFAULT_STEPS}
 
         context = dict(initial_context or {})
 
@@ -315,6 +836,10 @@ def run(
         if not quiet:
             print(f"Scenario: {scenario_id}")
         run_steps(scenario, context, step_registry)
+
+        # Generate RCA after all steps complete
+        rca = generate_rca(context)
+        context["rca"] = rca
 
         rule_result = evaluate_rules(config, context)
         if rule_result:

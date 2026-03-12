@@ -1,6 +1,12 @@
 # Local config (OpenSearch URL, credentials)
 .env
 
+# Twilio subaccount data (contains account SIDs)
+twilio_subaccounts.csv
+twilio_subaccounts_list.csv
+twilio_subaccounts_match_with_BE Name.csv
+k8s_namespaces.csv
+
 # Python
 __pycache__/
 *.py[cod]

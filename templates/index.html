@@ -9,164 +9,263 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0c0f14;
-      --surface: #151922;
-      --border: #2a3142;
-      --text: #e6eaf0;
-      --muted: #8b95a5;
-      --accent: #f59e0b;
-      --accent-dim: #b45309;
+      --bg: #0b0f19;
+      --surface: #111827;
+      --surface-2: #1e293b;
+      --surface-3: #273449;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-light: #a5b4fc;
+      --accent-dim: #4f46e5;
+      --accent-glow: rgba(99,102,241,0.2);
+      --cyan: #22d3ee;
+      --cyan-dim: rgba(34,211,238,0.1);
+      --teal: #2dd4bf;
+      --teal-dim: rgba(45,212,191,0.1);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251,191,36,0.1);
+      --orange: #fb923c;
+      --orange-dim: rgba(251,146,60,0.1);
+      --rose: #fb7185;
+      --rose-dim: rgba(251,113,133,0.1);
+      --emerald: #34d399;
+      --emerald-dim: rgba(52,211,153,0.1);
+      --sky: #38bdf8;
+      --sky-dim: rgba(56,189,248,0.1);
+      --violet: #c084fc;
+      --violet-dim: rgba(192,132,252,0.1);
       --success: #22c55e;
       --danger: #ef4444;
-      --radius: 10px;
+      --radius: 14px;
+      --shadow: 0 4px 32px rgba(0,0,0,0.3);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.2);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
       background: var(--bg);
+      background-image:
+        radial-gradient(ellipse at 15% 0%, rgba(99,102,241,0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 20%, rgba(34,211,238,0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 100%, rgba(251,191,36,0.05) 0%, transparent 50%);
       color: var(--text);
       font-family: 'DM Sans', system-ui, sans-serif;
       font-size: 15px;
-      line-height: 1.5;
+      line-height: 1.55;
     }
     .wrap {
-      max-width: 640px;
+      max-width: 900px;
       margin: 0 auto;
       padding: 2rem 1.5rem;
     }
     h1 {
-      font-size: 1.5rem;
+      font-size: 1.75rem;
       font-weight: 600;
       margin: 0 0 0.25rem 0;
       letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--accent-light) 0%, var(--cyan) 50%, var(--teal) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
     .sub {
       color: var(--muted);
       font-size: 0.9rem;
       margin-bottom: 2rem;
     }
+
+    /* Cards */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 1.5rem;
       margin-bottom: 1.5rem;
+      box-shadow: var(--shadow);
     }
     .card h2 {
       font-size: 0.85rem;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-      margin: 0 0 1rem 0;
+      letter-spacing: 0.08em;
+      color: var(--accent-light);
+      margin: 0 0 1.2rem 0;
+      padding-bottom: 0.6rem;
+      border-bottom: 1px solid var(--border);
     }
-    label { display: block; margin-bottom: 0.5rem; color: var(--muted); font-size: 0.9rem; }
-    input[type="text"] {
-      width: 100%;
-      padding: 0.65rem 0.9rem;
+
+    /* Inputs */
+    label { display: block; margin-bottom: 0.5rem; color: var(--muted); font-size: 0.9rem; font-weight: 500; }
+    select, input[type="text"], input[type="number"] {
+      padding: 0.6rem 0.85rem;
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.95rem;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-    }
-    input[type="text"]::placeholder { color: var(--muted); }
-    input:focus { outline: none; border-color: var(--accent); }
-    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.35rem; }
-    .checks {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.6rem 1.5rem;
-      margin-top: 1rem;
-    }
-    .check label {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin: 0;
-      color: var(--text);
       font-size: 0.9rem;
-      cursor: pointer;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
+    input[type="text"] { width: 100%; }
+    input[type="text"]::placeholder { color: var(--muted); }
+    select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.35rem; }
+    .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem 1.5rem; margin-top: 1rem; }
+    .check label { display: flex; align-items: center; gap: 0.5rem; margin: 0; color: var(--text); font-size: 0.9rem; cursor: pointer; }
     .check input { width: auto; margin: 0; accent-color: var(--accent); }
+
+    /* Buttons */
     .btn {
       margin-top: 1.25rem;
-      padding: 0.7rem 1.4rem;
+      padding: 0.7rem 1.8rem;
       font-family: inherit;
       font-size: 0.95rem;
       font-weight: 600;
-      background: var(--accent);
-      color: var(--bg);
+      background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+      color: #fff;
       border: none;
-      border-radius: 6px;
+      border-radius: 10px;
       cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 16px var(--accent-glow);
+      letter-spacing: 0.02em;
     }
-    .btn:hover { background: var(--accent-dim); filter: brightness(1.05); }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(99,102,241,0.3); }
+    .btn:active { transform: translateY(0); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     #result { display: none; }
     #result.visible { display: block; }
-    .scenario {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.85rem;
-      color: var(--accent);
-      margin-bottom: 1rem;
-    }
+    .scenario { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--cyan); margin-bottom: 1rem; }
     .conclusion {
-      font-size: 1.05rem;
-      font-weight: 600;
-      margin-bottom: 0.75rem;
-      padding: 0.75rem;
-      background: rgba(245, 158, 11, 0.12);
-      border-left: 3px solid var(--accent);
-      border-radius: 4px;
+      font-size: 1.05rem; font-weight: 600; margin-bottom: 0.75rem; padding: 0.75rem 1rem;
+      background: var(--amber-dim); border-left: 3px solid var(--amber); border-radius: 8px;
     }
-    .next-action {
-      padding: 0.75rem;
-      background: var(--bg);
-      border-radius: 6px;
-      font-size: 0.9rem;
-      color: var(--muted);
-    }
+    .next-action { padding: 0.75rem; background: var(--surface-2); border-radius: 8px; font-size: 0.9rem; color: var(--muted); }
     .next-action strong { color: var(--text); }
     .no-match { color: var(--muted); font-style: italic; }
-    .err {
-      color: var(--danger);
-      font-size: 0.9rem;
-      margin-top: 0.5rem;
-    }
+    .err { color: var(--danger); font-size: 0.9rem; margin-top: 0.5rem; }
     .loading { opacity: 0.7; pointer-events: none; }
-    .agent-actions { margin-top: 1rem; }
-    .agent-actions h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 0.5rem 0; }
+
+    /* Section panels with colored left borders */
+    .agent-actions {
+      margin-top: 1.25rem;
+      padding: 1rem 1.2rem;
+      background: var(--surface-2);
+      border-radius: 10px;
+      border-left: 4px solid var(--cyan);
+    }
+    .agent-actions h3 {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--cyan);
+      margin: 0 0 0.6rem 0;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .agent-actions h4 {
+      color: var(--teal);
+      font-size: 0.95rem;
+      margin-top: 0.75rem;
+    }
     .agent-actions ul { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; color: var(--muted); }
-    .agent-actions li { margin-bottom: 0.35rem; }
-    .agent-actions li strong { color: var(--accent); font-weight: 500; }
-    .client-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 0.5rem; }
-    .client-table th, .client-table td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
-    .client-table th { color: var(--muted); font-weight: 600; }
-    .download-row { margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
-    .download-row .btn { margin-top: 0; }
-    .download-row .btn.secondary { background: var(--border); color: var(--text); }
-    .download-row .btn.secondary:hover { background: var(--muted); }
+    .agent-actions li { margin-bottom: 0.45rem; line-height: 1.6; }
+    .agent-actions li strong { color: var(--amber); font-weight: 600; }
+
+    /* Color-coded section borders */
+    #errorCountSection { border-left-color: var(--sky); }
+    #errorCountSection h3 { color: var(--sky); }
+    #lensSection { border-left-color: var(--emerald); }
+    #lensSection h3 { color: var(--emerald); }
+    #rcaSection { border-left-color: var(--amber); }
+    #rcaSection h3 { color: var(--amber); }
+    #rcaTwilioSection { border-left: 3px solid var(--violet); border-radius: 8px; padding: 0.8rem 1rem; background: var(--surface); margin-bottom: 1rem; }
+    #rcaTwilioSection h4 { color: var(--violet); margin: 0 0 0.4rem 0; }
+
+    /* Tables */
+    .client-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; margin-top: 0.5rem; border-radius: 8px; overflow: hidden; }
+    .client-table th, .client-table td { text-align: left; padding: 0.55rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .client-table th {
+      color: var(--text);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: var(--surface-3);
+    }
+    .client-table tbody tr { transition: background 0.15s; }
+    .client-table tbody tr:hover td { background: rgba(99,102,241,0.06); }
+    .client-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+
+    /* Download buttons */
+    .download-row { margin-top: 1rem; display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .download-row .btn { margin-top: 0; font-size: 0.82rem; padding: 0.5rem 1rem; border-radius: 8px; }
+    .download-row .btn.secondary {
+      background: var(--surface);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      box-shadow: none;
+      font-weight: 500;
+    }
+    .download-row .btn.secondary:hover {
+      color: var(--text);
+      background: var(--surface-2);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    /* Animations */
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    #result.visible { animation: fadeIn 0.3s ease-out; }
+    .agent-actions { animation: fadeIn 0.25s ease-out; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Stream Server Alerts</h1>
-    <p class="sub">Run the alert engine: enter error codes and context, then get conclusion and next action.</p>
+    <p class="sub">Run the alert engine &mdash; analyse errors, pod restarts, Twilio calls, and generate RCA.</p>
 
     <div class="card">
       <h2>Input</h2>
       <label for="errorCodes">Error code(s)</label>
-      <input type="text" id="errorCodes" placeholder="e.g. 500, 503 (matches OpenSearch error_code field)" value="500 503">
-      <p class="hint">Space- or comma-separated codes; field set by OPENSEARCH_ERROR_CODE_FIELD in .env</p>
+      <select id="errorCodes" style="width: 100%;">
+        <option value="all" selected>Total errors (all error codes)</option>
+        <optgroup label="Server errors">
+          <option value="500,503">500 &amp; 503 - Server errors</option>
+          <option value="500">500 - Internal Server Error</option>
+          <option value="502">502 - Bad Gateway</option>
+          <option value="503">503 - Service Unavailable</option>
+          <option value="504">504 - Gateway Timeout</option>
+        </optgroup>
+        <optgroup label="Client errors">
+          <option value="400">400 - Bad Request</option>
+          <option value="401">401 - Unauthorized</option>
+          <option value="403">403 - Forbidden</option>
+          <option value="404">404 - Not Found</option>
+          <option value="408">408 - Request Timeout</option>
+          <option value="429">429 - Too Many Requests</option>
+        </optgroup>
+        <optgroup label="Combined">
+          <option value="500,502,503,504">All server errors (5xx)</option>
+          <option value="400,401,403">All auth errors (400/401/403)</option>
+        </optgroup>
+      </select>
+      <p class="hint">Total errors = all error codes; or pick specific codes to filter</p>
 
       <label for="timeFilter" style="margin-top: 1rem;">Time window (mirrors OpenSearch Discover)</label>
       <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-top: 0.35rem;">
-        <select id="timeFilter" style="padding: 0.5rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.95rem;">
+        <select id="timeFilter" style="min-width: 200px;">
           <optgroup label="Common (Discover presets)">
-            <option value="15">Last 15 minutes</option>
+            <option value="15" selected>Last 15 minutes</option>
             <option value="30">Last 30 minutes</option>
             <option value="60">Last 1 hour</option>
             <option value="180">Last 3 hours</option>
@@ -174,7 +273,7 @@
             <option value="720">Last 12 hours</option>
             <option value="1440">Last 24 hours</option>
             <option value="2880">Last 2 days</option>
-            <option value="7200" selected>Last 5 days</option>
+            <option value="7200">Last 5 days</option>
             <option value="10080">Last 7 days</option>
             <option value="20160">Last 14 days</option>
             <option value="43200">Last 30 days</option>
@@ -184,23 +283,14 @@
           </optgroup>
         </select>
         <span id="customTimeWrap" style="display: none;">
-          <input type="number" id="customTimeMins" min="1" max="43200" value="7200" placeholder="Minutes" style="width: 6rem; padding: 0.5rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text);">
+          <input type="number" id="customTimeMins" min="1" max="43200" value="7200" placeholder="Minutes" style="width: 6rem;">
           <span class="hint" style="margin-left: 0.25rem;">mins (max 43200 = 30 days)</span>
         </span>
       </div>
       <p class="hint">Same relative range as Discover (now-X to now). Errors from OpenSearch in this window.</p>
 
-      <label style="margin-top: 1rem;">Context (optional — override step results)</label>
-      <div class="checks">
-        <div class="check"><input type="checkbox" id="calls_ok"><label for="calls_ok">Calls OK</label></div>
-        <div class="check"><input type="checkbox" id="calls_fail"><label for="calls_fail">Calls fail</label></div>
-        <div class="check"><input type="checkbox" id="restart"><label for="restart">Restart detected</label></div>
-        <div class="check"><input type="checkbox" id="auth_ok"><label for="auth_ok">Auth OK</label></div>
-        <div class="check"><input type="checkbox" id="auth_fail"><label for="auth_fail">Auth fail</label></div>
-      </div>
-
       <div class="checks" style="margin-top: 1rem;">
-        <div class="check"><input type="checkbox" id="as_agent"><label for="as_agent">Run as agent (show planned actions)</label></div>
+        <div class="check" style="display:none;"><input type="checkbox" id="as_agent"><label for="as_agent">Run as agent (show planned actions)</label></div>
       </div>
 
       <button type="button" class="btn" id="run">Run</button>
@@ -210,29 +300,79 @@
     <div class="card" id="result">
       <h2>Result</h2>
       <p class="error-codes-result" id="outErrorCodes"></p>
-      <p class="scenario" id="outScenario"></p>
+      <div class="agent-actions" id="errorCountSection" style="display: none;">
+        <h3 id="errorCountTitle">Error count by tenant &amp; error code</h3>
+        <p class="hint" id="errorCountHint" style="margin: 0 0 0.5rem 0;"></p>
+        <table class="client-table" id="errorCountTable">
+          <thead><tr><th>Tenant</th><th>Error code</th><th>Count</th></tr></thead>
+          <tbody id="errorCountBody"></tbody>
+        </table>
+        <div class="download-row" id="downloadRow" style="display: none; margin-top: 1rem;">
+          <button type="button" class="btn secondary" id="downloadCountCsv">Download error count (CSV)</button>
+          <button type="button" class="btn secondary" id="downloadJson">Download error count (JSON)</button>
+          <button type="button" class="btn secondary" id="downloadLogsCsv">Download error logs (CSV)</button>
+        </div>
+      </div>
+      <div class="agent-actions" id="lensSection" style="display: none;">
+        <h3>Bot engine restarts (from Lens / Kubernetes)</h3>
+        <p class="hint" id="lensSummary" style="margin: 0 0 0.5rem 0;"></p>
+        <table class="client-table" id="lensPodsTable" style="display: none;">
+          <thead><tr><th>Pod name</th><th>Namespace</th><th>Restarts</th><th>Age</th><th>Status</th><th>Last restart</th></tr></thead>
+          <tbody id="lensPodsBody"></tbody>
+        </table>
+        <div class="download-row" style="margin-top: 0.75rem;">
+          <button type="button" class="btn secondary" id="downloadLensCsv">Download pod restarts (CSV)</button>
+          <button type="button" class="btn secondary" id="downloadLensJson">Download pod restarts (JSON)</button>
+        </div>
+      </div>
+      <div class="agent-actions" id="rcaSection" style="display: none;">
+        <div id="rcaTwilioSection" style="display: none; margin-bottom: 1rem;">
+          <h4 style="margin: 0 0 0.4rem 0;">Twilio Call Logs</h4>
+          <div id="rcaTwilioErrorCodes" style="margin: 0.4rem 0;"></div>
+          <p class="hint" id="rcaTwilioSummary" style="margin: 0 0 0.5rem 0;"></p>
+          <table class="client-table" id="rcaTwilioTable" style="display: none;">
+            <thead><tr><th>Time</th><th>Account</th><th>Namespace</th><th>From</th><th>To</th><th>Direction</th><th>Status</th><th>Duration</th><th>Error Code</th><th>Error Message</th></tr></thead>
+            <tbody id="rcaTwilioBody"></tbody>
+          </table>
+        </div>
+        <div id="rcaTopTenants" style="margin-bottom: 0.75rem;"></div>
+        <h3 style="margin-top: 1.25rem; font-size: 0.9rem;">Root Cause Analysis (RCA)</h3>
+        <div id="rcaAiSummary" style="display:none; margin: 0.75rem 0; padding: 1.1rem 1.3rem; background: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(34,211,238,0.05) 50%, rgba(192,132,252,0.05) 100%); border: 1px solid rgba(99,102,241,0.2); border-radius: 12px; line-height: 1.7; box-shadow: 0 4px 20px rgba(99,102,241,0.08);">
+          <h4 style="margin: 0 0 0.6rem 0; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--violet));font-size:0.9rem;">&#9889;</span>
+            <span style="background: linear-gradient(135deg, var(--accent-light), var(--violet)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 600;">AI-Powered RCA Summary</span>
+          </h4>
+          <div id="rcaAiSummaryBody" style="font-size: 0.9rem; line-height: 1.65;"></div>
+        </div>
+        <ul id="rcaDetails" style="margin: 0.5rem 0 0 1.2rem;"></ul>
+        <div id="rcaBotEngineConnSection" style="display: none; margin-top: 1rem;">
+          <h4 style="margin: 0 0 0.4rem 0;">Bot Engine Error Codes (by connection_id)</h4>
+          <div id="rcaBotEngineErrorCodes" style="margin: 0.4rem 0;"></div>
+          <p class="hint" id="rcaBotEngineConnSummary" style="margin: 0 0 0.5rem 0;"></p>
+          <table class="client-table" id="rcaBotEngineConnTable" style="display: none;">
+            <thead><tr><th>Timestamp</th><th>Connection ID</th><th>Tenant</th><th>Error code</th><th>Event type</th><th>Message</th></tr></thead>
+            <tbody id="rcaBotEngineConnBody"></tbody>
+          </table>
+        </div>
+        <div id="rcaBotEngineSection" style="display: none; margin-top: 1rem;">
+          <h4 style="margin: 0 0 0.4rem 0;">Bot Engine Logs (by context_id)</h4>
+          <p class="hint" id="rcaBotEngineSummary" style="margin: 0 0 0.5rem 0;"></p>
+          <table class="client-table" id="rcaBotEngineTable" style="display: none;">
+            <thead><tr><th>Timestamp</th><th>Context ID</th><th>Tenant</th><th>Level</th><th>Event type</th><th>Message</th></tr></thead>
+            <tbody id="rcaBotEngineBody"></tbody>
+          </table>
+        </div>
+        <div class="download-row" style="margin-top: 1rem;">
+          <button type="button" class="btn secondary" id="downloadRcaTxt">Download RCA (Text)</button>
+          <button type="button" class="btn secondary" id="downloadRcaJson">Download RCA (JSON)</button>
+        </div>
+      </div>
+      <p class="scenario" id="outScenario" style="margin-top: 1.5rem;"></p>
       <p class="conclusion" id="outConclusion"></p>
       <p class="next-action" id="outAction"></p>
       <div class="agent-actions" id="agentActions" style="display: none;">
         <h3>Agent actions</h3>
         <ul id="agentActionsList"></ul>
-      </div>
-      <div class="agent-actions" id="errorCountSection" style="display: none;">
-        <h3 id="errorCountTitle">Error count</h3>
-        <p class="hint" id="errorCountHint" style="margin: 0 0 0.5rem 0;"></p>
-        <table class="client-table" id="errorCountTable">
-          <thead><tr><th id="errorCountCol1">Error code</th><th>Count</th></tr></thead>
-          <tbody id="errorCountBody"></tbody>
-        </table>
-      </div>
-      <div class="agent-actions" id="opensearchSection" style="display: none;">
-        <h3>Errors from OpenSearch</h3>
-        <p class="hint" id="opensearchSummary"></p>
-        <ul id="opensearchErrorsList"></ul>
-      </div>
-      <div class="download-row" id="downloadRow" style="display: none;">
-        <button type="button" class="btn secondary" id="downloadCsv">Download logs (CSV)</button>
-        <button type="button" class="btn secondary" id="downloadJson">Download logs (JSON)</button>
       </div>
     </div>
   </div>
@@ -248,15 +388,16 @@
     const outAction = document.getElementById('outAction');
     const agentActionsEl = document.getElementById('agentActions');
     const agentActionsListEl = document.getElementById('agentActionsList');
-    const opensearchSection = document.getElementById('opensearchSection');
-    const opensearchSummary = document.getElementById('opensearchSummary');
-    const opensearchErrorsList = document.getElementById('opensearchErrorsList');
     const errorCountSection = document.getElementById('errorCountSection');
     const errorCountTitle = document.getElementById('errorCountTitle');
     const errorCountHint = document.getElementById('errorCountHint');
     const errorCountCol1 = document.getElementById('errorCountCol1');
     const errorCountBody = document.getElementById('errorCountBody');
     const downloadRow = document.getElementById('downloadRow');
+    const lensSection = document.getElementById('lensSection');
+    const lensSummary = document.getElementById('lensSummary');
+    const lensPodsTable = document.getElementById('lensPodsTable');
+    const lensPodsBody = document.getElementById('lensPodsBody');
     const timeFilterEl = document.getElementById('timeFilter');
     const customTimeWrap = document.getElementById('customTimeWrap');
     const customTimeMinsEl = document.getElementById('customTimeMins');
@@ -282,29 +423,20 @@
       if (m >= 60) return Math.round(m / 60) + ' hour' + (m >= 120 ? 's' : '');
       return m + ' min' + (m !== 1 ? 's' : '');
     }
-    function parseErrorCodes(s) {
-      return s.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+
+    function getSelectedCodes() {
+      if (errorCodesEl.value === 'all') return [];
+      return errorCodesEl.value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
     }
 
     runBtn.addEventListener('click', async () => {
-      const raw = errorCodesEl.value.trim();
-      const codes = parseErrorCodes(raw);
-      if (codes.length === 0) {
-        apiErr.textContent = 'Enter at least one error code (e.g. 500, 503).';
-        apiErr.style.display = 'block';
-        return;
-      }
+      const codes = getSelectedCodes();
       apiErr.style.display = 'none';
       resultEl.classList.remove('visible');
       runBtn.disabled = true;
       runBtn.closest('.card').classList.add('loading');
 
       const context = {};
-      if (document.getElementById('calls_ok').checked) context.calls_ok = true;
-      if (document.getElementById('calls_fail').checked) context.calls_fail = true;
-      if (document.getElementById('restart').checked) context.restart_detected = true;
-      if (document.getElementById('auth_ok').checked) context.auth_ok = true;
-      if (document.getElementById('auth_fail').checked) context.auth_fail = true;
 
       const asAgent = document.getElementById('as_agent').checked;
       const url = asAgent ? '/api/agent/run' : '/api/run';
@@ -327,35 +459,38 @@
           return;
         }
         const codesUsed = data.error_codes_used || [];
-        outErrorCodes.textContent = codesUsed.length ? 'Error codes (OpenSearch field): ' + codesUsed.join(', ') : '';
-        outErrorCodes.style.display = codesUsed.length ? 'block' : 'none';
-        outScenario.textContent = data.scenario_id ? `Scenario: ${data.scenario_id}` : (data.error || 'No scenario');
-        if (data.matched_rule && data.conclusion) {
-          outConclusion.textContent = data.conclusion;
-          outConclusion.classList.remove('no-match');
-        } else {
-          outConclusion.textContent = 'No decision rule matched.';
-          outConclusion.classList.add('no-match');
-        }
-        outAction.innerHTML = data.next_action
-          ? '<strong>Next action:</strong> ' + data.next_action
-          : '';
+        outErrorCodes.textContent = codesUsed.length
+          ? 'Filtered by error code(s): ' + codesUsed.join(', ')
+          : 'Total errors (all error codes)';
+        outErrorCodes.style.display = 'block';
+        outScenario.textContent = '';
+        outScenario.style.display = 'none';
+        outConclusion.textContent = '';
+        outConclusion.style.display = 'none';
+        outAction.innerHTML = '';
+        outAction.style.display = 'none';
         lastResult = data;
         const ctx = data.context || {};
+        const byTenantErrorCode = ctx.opensearch_by_tenant_error_code || [];
         const byErrorCode = ctx.opensearch_by_error_code || [];
-        const byErrorName = ctx.opensearch_by_error_name || [];
-        if (byErrorCode.length) {
+        if (byTenantErrorCode.length) {
+          errorCountSection.style.display = 'block';
+          errorCountTitle.textContent = 'Error count by tenant & error code';
+          errorCountHint.textContent = 'From OpenSearch fields: tenant_name + ' + (ctx.opensearch_error_code_field || 'error_code');
+          const totalCount = byTenantErrorCode.reduce((sum, r) => sum + (r.count ?? 0), 0);
+          errorCountBody.innerHTML = byTenantErrorCode.map(r =>
+            '<tr><td>' + (r.tenant_name || '-') + '</td><td>' + (r.error_code ?? '-') + '</td><td>' + (r.count ?? 0) + '</td></tr>'
+          ).join('')
+            + '<tr style="font-weight:bold;border-top:2px solid var(--border,#ccc);"><td colspan="2">Total</td><td>' + totalCount + '</td></tr>';
+        } else if (byErrorCode.length) {
           errorCountSection.style.display = 'block';
           errorCountTitle.textContent = 'Error count by error code';
           errorCountHint.textContent = 'From OpenSearch field: ' + (ctx.opensearch_error_code_field || 'error_code');
-          errorCountCol1.textContent = 'Error code';
-          errorCountBody.innerHTML = byErrorCode.map(b => '<tr><td>' + (b.code ?? '-') + '</td><td>' + (b.count ?? 0) + '</td></tr>').join('');
-        } else if (byErrorName.length) {
-          errorCountSection.style.display = 'block';
-          errorCountTitle.textContent = 'Error count by error name';
-          errorCountHint.textContent = 'From OpenSearch field: ' + (ctx.opensearch_error_name_field || 'rawLog.data.error.name');
-          errorCountCol1.textContent = 'Error name';
-          errorCountBody.innerHTML = byErrorName.map(b => '<tr><td>' + (b.name || '-') + '</td><td>' + (b.count ?? 0) + '</td></tr>').join('');
+          const totalCount = byErrorCode.reduce((sum, b) => sum + (b.count ?? 0), 0);
+          errorCountBody.innerHTML = byErrorCode.map(b =>
+            '<tr><td>-</td><td>' + (b.code ?? '-') + '</td><td>' + (b.count ?? 0) + '</td></tr>'
+          ).join('')
+            + '<tr style="font-weight:bold;border-top:2px solid var(--border,#ccc);"><td colspan="2">Total</td><td>' + totalCount + '</td></tr>';
         } else {
           errorCountSection.style.display = 'none';
         }
@@ -369,47 +504,204 @@
         } else {
           agentActionsEl.style.display = 'none';
         }
-        if (ctx.opensearch_available !== undefined) {
-          opensearchSection.style.display = 'block';
-          if (ctx.opensearch_error) {
-            opensearchSummary.textContent = 'OpenSearch error: ' + ctx.opensearch_error;
-            opensearchErrorsList.innerHTML = '';
-          } else {
-            const mins = ctx._time_minutes ?? 60;
-            const timeLabel = formatTimeWindow(mins);
-            const total = ctx.opensearch_total ?? ctx.error_count ?? 0;
-            const byErrorName = ctx.opensearch_by_error_name || [];
-            let summaryText = 'Total errors: ' + total + ' (last ' + timeLabel + ')';
-            const codeFieldLabel = ctx.opensearch_error_code_field || '';
-            const nameFieldLabel = ctx.opensearch_error_name_field || '';
-            if (codeFieldLabel) summaryText += ' · Field: ' + codeFieldLabel;
-            if (nameFieldLabel) summaryText += ' · Field: ' + nameFieldLabel;
-            if (byErrorName.length) {
-              summaryText += ' · By name: ' + byErrorName.map(b => (b.name || '-') + ' (' + (b.count ?? 0) + ')').join(', ');
-            }
-            if (ctx.opensearch_tenants?.length) {
-              summaryText += ' · Tenants: ' + (ctx.opensearch_tenants.map(t => t.name || t).join(', ') || ctx.impacted_tenants?.join(', '));
-            }
-            opensearchSummary.textContent = summaryText;
-            const sample = ctx.opensearch_sample_errors || [];
-            const sampleRows = sample.length ? sample.slice(0, 10).map(e => {
-              const ts = e.timestamp || '';
-              const nameOrCode = (e.error_name != null ? e.error_name : e.error_code != null ? e.error_code : '');
-              const tenant = e.tenant_name || '';
-              const msg = (e.message || '').toString().slice(0, 120);
-              return '<li><strong>' + [ts, nameOrCode, tenant].filter(Boolean).join(' · ') + '</strong>' + (msg ? ': ' + msg : '') + '</li>';
-            }).join('') : '';
-            const noSampleHint = total === 0
-              ? 'No errors in the last ' + timeLabel + ' in this index.'
-              : 'No sample returned. Set OPENSEARCH_ERROR_NAME_FIELD (e.g. rawLog.data.error.name) in .env if your index uses different field names.';
-            opensearchErrorsList.innerHTML = sampleRows || '<li class="hint">' + noSampleHint + '</li>';
-          }
-        } else {
-          opensearchSection.style.display = 'none';
+        if (ctx.opensearch_available === undefined) {
           errorCountSection.style.display = 'none';
         }
-        const hasDownload = (data.context?.opensearch_by_error_code?.length) || (data.context?.opensearch_by_error_name?.length) || (data.context?.opensearch_sample_errors?.length);
-        downloadRow.style.display = hasDownload ? 'flex' : 'none';
+        // --- Lens / Kubernetes pod restarts ---
+        const lensPods = ctx.lens_pod_restarts || [];
+        const lensAvailable = ctx.lens_available;
+        if (lensAvailable !== undefined) {
+          if (ctx.lens_error) {
+            lensSection.style.display = 'block';
+            const errMsg = ctx.lens_error || '';
+            const isNetwork = errMsg.includes('Max retries') || errMsg.includes('NewConnectionError') || errMsg.includes('WinError') || errMsg.includes('ConnectionRefused') || errMsg.includes('timed out');
+            lensSummary.innerHTML = isNetwork
+              ? '<strong>Could not reach Kubernetes cluster.</strong> Ensure VPN is connected and the cluster is reachable from this machine. <span style="color:var(--muted);font-size:0.8rem;">Check Lens desktop to verify you can see pods.</span>'
+              : 'Kubernetes error: ' + errMsg;
+            lensPodsTable.style.display = 'none';
+          } else if (lensPods.length === 0) {
+            lensSection.style.display = 'block';
+            lensSummary.textContent = 'No bot engine pods with restarts found in the time window.';
+            lensPodsTable.style.display = 'none';
+          } else {
+            lensSection.style.display = 'block';
+            lensSummary.textContent = (ctx.lens_pods_with_restarts || 0) + ' pod(s) with restarts (' + (ctx.lens_total_restarts || 0) + ' total restarts).';
+            lensPodsTable.style.display = 'table';
+            lensPodsBody.innerHTML = lensPods.map(p =>
+              '<tr><td>' + (p.name || '-') + '</td><td>' + (p.namespace || '-') + '</td><td>' + (p.restart_count ?? 0)
+              + '</td><td>' + (p.age || '-') + '</td><td>' + (p.status || '-')
+              + '</td><td>' + (p.last_restart_at || '-') + '</td></tr>'
+            ).join('');
+          }
+        } else {
+          lensSection.style.display = 'none';
+        }
+        // --- RCA section ---
+        const rca = ctx.rca;
+        const rcaSection = document.getElementById('rcaSection');
+        if (rca && (rca.rca_summary || rca.rca_details?.length)) {
+          rcaSection.style.display = 'block';
+          const topTenants = rca.top_tenants || [];
+          const rcaTopEl = document.getElementById('rcaTopTenants');
+          if (topTenants.length) {
+            let html = '<strong>Impacted tenant(s) (' + topTenants.length + '):</strong>';
+            html += '<table class="client-table" style="margin-top:0.4rem;"><thead><tr><th>Tenant</th><th>Namespace</th><th>Total errors</th><th>Error codes</th><th>Twilio errors</th><th>Recent pod restarts</th></tr></thead><tbody>';
+            topTenants.forEach(t => {
+              const codes = (t.error_codes || []).map(c => c.code + ' (' + c.count + ')').join(', ');
+              const ns = t.namespace || '-';
+              const twilioErrCount = t.twilio_error_count || 0;
+              const twilioCell = twilioErrCount > 0
+                ? '<span style="color:#c0392b;font-weight:bold;">' + twilioErrCount + '</span>'
+                : '0';
+              let restartInfo = 'No recent restarts';
+              if (t.restart_detected) {
+                const pods = (t.restart_pods || []).map(p => p.name + ' (age ' + (p.age || '?') + ')').join(', ');
+                restartInfo = '<span style="color:#c0392b;font-weight:bold;">' + t.restart_count + ' pod(s) restarted</span> — ' + pods;
+              }
+              html += '<tr><td>' + (t.tenant_name || '-') + '</td><td>' + ns + '</td><td>' + (t.total_errors ?? 0) + '</td><td>' + (codes || '-') + '</td><td>' + twilioCell + '</td><td>' + restartInfo + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            rcaTopEl.innerHTML = html;
+          } else {
+            rcaTopEl.innerHTML = '';
+          }
+          // --- AI Summary card ---
+          const aiSummaryEl = document.getElementById('rcaAiSummary');
+          const aiSummaryBody = document.getElementById('rcaAiSummaryBody');
+          const aiText = rca.ai_summary || '';
+          if (aiText) {
+            const paragraphs = aiText.split(/\n\n+/);
+            aiSummaryBody.innerHTML = paragraphs.map(p => {
+              const html = p.trim()
+                .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#818cf8">$1</strong>')
+                .replace(/\n/g, '<br>');
+              return '<p style="margin: 0.4rem 0;">' + html + '</p>';
+            }).join('');
+            aiSummaryEl.style.display = 'block';
+          } else {
+            aiSummaryEl.style.display = 'none';
+          }
+          // --- Bot Engine Analysis as bullet point ---
+          const beErrCodes = rca.bot_engine_error_codes || {};
+          const beErrKeys = Object.keys(beErrCodes);
+          const topTenantNames = (rca.top_tenants || []).map(t => t.tenant_name || '-').join(', ');
+          let botBullet = '';
+          if (beErrKeys.length) {
+            beErrKeys.sort((a, b) => (beErrCodes[b] || 0) - (beErrCodes[a] || 0));
+            const codesStr = beErrKeys.map(c => '<span style="background:#c0392b;color:#fff;padding:0.1rem 0.4rem;border-radius:3px;font-weight:bold;">' + c + ' (' + beErrCodes[c] + 'x)</span>').join(' ');
+            botBullet = '<li><strong>Bot Engine Analysis:</strong> Errors found for impacted tenants (' + topTenantNames + ') — ' + codesStr + '</li>';
+          } else if (topTenantNames) {
+            botBullet = '<li><strong>Bot Engine Analysis:</strong> No errors found in bot engine logs for the impacted tenants (' + topTenantNames + ')</li>';
+          }
+          let twilioBullet = '';
+          const twilioAnalysis = rca.twilio_analysis || '';
+          if (twilioAnalysis && twilioAnalysis !== 'Twilio not configured.') {
+            const isTwilioError = (rca.twilio_failed_calls || 0) > 0;
+            twilioBullet = '<li><strong>Twilio Analysis:</strong> ' + (isTwilioError ? '<span style="color:#c0392b;">' + twilioAnalysis + '</span>' : twilioAnalysis) + '</li>';
+          }
+          let summaryBullet = '';
+          const rcaSummaryText = rca.rca_summary || '';
+          if (rcaSummaryText) {
+            summaryBullet = '<li><strong>Bot Engine Restarts:</strong> ' + rcaSummaryText + '</li>';
+          }
+          const detailsEl = document.getElementById('rcaDetails');
+          detailsEl.innerHTML = summaryBullet + botBullet + twilioBullet + (rca.rca_details || []).map(d => '<li>' + d + '</li>').join('');
+          // --- Bot engine error codes by connection_id ---
+          const beConnFindings = rca.bot_engine_conn_findings || [];
+          const beErrorCodes = rca.bot_engine_error_codes || {};
+          const beConnSec = document.getElementById('rcaBotEngineConnSection');
+          const beConnTable = document.getElementById('rcaBotEngineConnTable');
+          const beConnSummary = document.getElementById('rcaBotEngineConnSummary');
+          const beConnBody = document.getElementById('rcaBotEngineConnBody');
+          const beErrorCodesEl = document.getElementById('rcaBotEngineErrorCodes');
+          const errorCodeKeys = Object.keys(beErrorCodes);
+          if (errorCodeKeys.length) {
+            beConnSec.style.display = 'block';
+            let codesHtml = '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;">';
+            errorCodeKeys.sort((a, b) => (beErrorCodes[b] || 0) - (beErrorCodes[a] || 0));
+            errorCodeKeys.forEach(code => {
+              codesHtml += '<span style="background:#c0392b;color:#fff;padding:0.3rem 0.7rem;border-radius:4px;font-weight:bold;font-size:0.95rem;">' + code + ' <small>(' + beErrorCodes[code] + 'x)</small></span>';
+            });
+            codesHtml += '</div>';
+            beErrorCodesEl.innerHTML = codesHtml;
+            beConnSummary.textContent = beConnFindings.length + ' bot engine error(s) found via connection_id lookup.';
+            if (beConnFindings.length) {
+              beConnTable.style.display = 'table';
+              beConnBody.innerHTML = beConnFindings.map(f =>
+                '<tr><td>' + (f.timestamp || '-') + '</td><td style="font-size:0.78rem;">' + (f.connection_id || '-') + '</td><td>' + (f.tenant_name || '-') + '</td><td style="color:#c0392b;font-weight:bold;">' + (f.error_code || '-') + '</td><td>' + (f.event_type || '-') + '</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (f.message || '-') + '</td></tr>'
+              ).join('');
+            } else {
+              beConnTable.style.display = 'none';
+            }
+          } else {
+            beConnSec.style.display = 'none';
+          }
+          // --- Bot engine logs by context_id ---
+          const beFindings = rca.bot_engine_findings || [];
+          const beSec = document.getElementById('rcaBotEngineSection');
+          const beTable = document.getElementById('rcaBotEngineTable');
+          const beSummary = document.getElementById('rcaBotEngineSummary');
+          const beBody = document.getElementById('rcaBotEngineBody');
+          const idsChecked = rca.context_ids_checked || [];
+          if (beFindings.length) {
+            beSec.style.display = 'block';
+            beSummary.textContent = beFindings.length + ' error(s) found in bot engine logs for ' + idsChecked.length + ' context ID(s).';
+            beTable.style.display = 'table';
+            beBody.innerHTML = beFindings.map(f =>
+              '<tr><td>' + (f.timestamp || '-') + '</td><td style="font-size:0.78rem;">' + (f.context_id || '-') + '</td><td>' + (f.tenant_name || '-') + '</td><td>' + (f.level || '-') + '</td><td>' + (f.event_type || '-') + '</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (f.message || '-') + '</td></tr>'
+            ).join('');
+          } else if (idsChecked.length) {
+            beSec.style.display = 'block';
+            beTable.style.display = 'none';
+            beSummary.textContent = 'No errors found in bot engine logs for ' + idsChecked.length + ' context ID(s).';
+          } else {
+            beSec.style.display = 'none';
+          }
+          // --- Twilio section ---
+          const twilioSec = document.getElementById('rcaTwilioSection');
+          const twilioTable = document.getElementById('rcaTwilioTable');
+          const twilioSummary = document.getElementById('rcaTwilioSummary');
+          const twilioBody = document.getElementById('rcaTwilioBody');
+          const twilioFailed = rca.twilio_failed_list || [];
+          const twilioTotal = rca.twilio_total_calls || 0;
+          const twilioFailedCount = rca.twilio_failed_calls || 0;
+          const twilioAccounts = rca.twilio_accounts_checked || [];
+          const twilioErrCodes = rca.twilio_error_codes || {};
+          const twilioErrCodesEl = document.getElementById('rcaTwilioErrorCodes');
+          if (twilioTotal > 0 || twilioFailed.length > 0) {
+            twilioSec.style.display = 'block';
+            // Error code badges
+            const tErrKeys = Object.keys(twilioErrCodes);
+            if (tErrKeys.length) {
+              tErrKeys.sort((a, b) => (twilioErrCodes[b] || 0) - (twilioErrCodes[a] || 0));
+              twilioErrCodesEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;">' + tErrKeys.map(code =>
+                '<span style="background:#c0392b;color:#fff;padding:0.3rem 0.7rem;border-radius:4px;font-weight:bold;font-size:0.95rem;">' + code + ' <small>(' + twilioErrCodes[code] + 'x)</small></span>'
+              ).join('') + '</div>';
+            } else {
+              twilioErrCodesEl.innerHTML = '';
+            }
+            if (twilioFailedCount > 0) {
+              twilioSummary.innerHTML = '<span style="color:#c0392b;font-weight:bold;">' + twilioFailedCount + ' failed</span> out of ' + twilioTotal + ' calls within the time window.';
+            } else {
+              twilioSummary.textContent = twilioTotal + ' calls found — all successful. No Twilio issues detected.';
+            }
+            if (twilioFailed.length) {
+              twilioTable.style.display = 'table';
+              twilioBody.innerHTML = twilioFailed.map(c =>
+                '<tr><td>' + (c.start_time || '-') + '</td><td>' + (c.account || '-') + '</td><td>' + (c.namespace || '-') + '</td><td>' + (c.from || '-') + '</td><td>' + (c.to || '-') + '</td><td>' + (c.direction || '-') + '</td><td style="color:#c0392b;font-weight:bold;">' + (c.status || '-') + '</td><td>' + (c.duration || 0) + 's</td><td style="color:#c0392b;font-weight:bold;">' + (c.error_code || '-') + '</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (c.error_message || '-') + '</td></tr>'
+              ).join('');
+            } else {
+              twilioTable.style.display = 'none';
+            }
+          } else {
+            twilioSec.style.display = 'none';
+          }
+        } else {
+          rcaSection.style.display = 'none';
+        }
+        const hasTenantCount = (ctx.opensearch_by_tenant_error_code?.length > 0);
+        const hasErrorCode = (ctx.opensearch_by_error_code?.length > 0);
+        downloadRow.style.display = (hasTenantCount || hasErrorCode) ? 'flex' : 'none';
         resultEl.classList.add('visible');
       } catch (e) {
         apiErr.textContent = e.message || 'Network error';
@@ -427,46 +719,208 @@
       a.click();
     }
 
-    document.getElementById('downloadCsv').addEventListener('click', () => {
-      const byErrorCode = lastResult?.context?.opensearch_by_error_code || [];
-      const byErrorName = lastResult?.context?.opensearch_by_error_name || [];
-      const sample = lastResult?.context?.opensearch_sample_errors || [];
-      if (sample.length) {
-        const header = 'timestamp,error_code,tenant_name,message\n';
-        const rows = sample.map(e => [
-          (e.timestamp != null ? e.timestamp : ''),
-          (e.error_code != null ? e.error_code : e.error_name != null ? e.error_name : ''),
-          (e.tenant_name != null ? String(e.tenant_name).replace(/"/g, '""') : ''),
-          (e.message != null ? String(e.message).replace(/"/g, '""').replace(/\n/g, ' ') : '')
-        ].map(v => '"' + v + '"').join(',')).join('\n');
-        downloadFile(header + rows, 'stream_errors_log.csv', 'text/csv');
-        return;
-      }
-      if (byErrorCode.length) {
-        const header = 'Error code,Count\n';
-        const rows = byErrorCode.map(b => (b.code ?? '') + ',' + (b.count ?? 0)).join('\n');
-        downloadFile(header + rows, 'error_count_by_code.csv', 'text/csv');
-      } else if (byErrorName.length) {
-        const header = 'Error name,Count\n';
-        const rows = byErrorName.map(b => '"' + (b.name || '').replace(/"/g, '""') + '",' + (b.count ?? 0)).join('\n');
-        downloadFile(header + rows, 'error_count_by_name.csv', 'text/csv');
-      }
+    document.getElementById('downloadCountCsv').addEventListener('click', () => {
+      const byTenantCode = lastResult?.context?.opensearch_by_tenant_error_code || [];
+      if (!byTenantCode.length) return;
+      const header = 'Tenant,Error code,Count\n';
+      const rows = byTenantCode.map(r =>
+        '"' + (r.tenant_name || '').replace(/"/g, '""') + '",' + (r.error_code ?? '') + ',' + (r.count ?? 0)
+      ).join('\n');
+      downloadFile(header + rows, 'opensearch_error_count_by_tenant.csv', 'text/csv');
     });
 
     document.getElementById('downloadJson').addEventListener('click', () => {
       if (!lastResult) return;
+      const ctx = lastResult.context || {};
+      const byTenantCode = ctx.opensearch_by_tenant_error_code || [];
+      const byErrorCode = ctx.opensearch_by_error_code || [];
       const payload = {
-        scenario_id: lastResult.scenario_id,
-        conclusion: lastResult.conclusion,
-        next_action: lastResult.next_action,
-        total_error_count: lastResult.total_error_count,
-        error_count_by_code: lastResult.context?.opensearch_by_error_code || [],
-        error_count_by_name: lastResult.context?.opensearch_by_error_name || [],
-        sample_errors: lastResult.context?.opensearch_sample_errors || [],
+        source: 'OpenSearch',
+        total_error_count: ctx.opensearch_total ?? ctx.error_count ?? 0,
+        error_count_by_tenant_and_code: byTenantCode,
+        error_count_by_code: byErrorCode,
         exported_at: new Date().toISOString()
       };
-      downloadFile(JSON.stringify(payload, null, 2), 'stream_errors_log.json', 'application/json');
+      downloadFile(JSON.stringify(payload, null, 2), 'opensearch_error_count.json', 'application/json');
     });
+
+    document.getElementById('downloadLogsCsv').addEventListener('click', async () => {
+      const btn = document.getElementById('downloadLogsCsv');
+      btn.disabled = true;
+      btn.textContent = 'Fetching logs\u2026';
+      try {
+        const codes = lastResult?.error_codes_used || getSelectedCodes();
+        const timeMins = lastResult?.context?._time_minutes ?? getTimeMinutes();
+        const resp = await fetch('/api/download/error-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ error_codes: codes, time_minutes: timeMins })
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          alert('Failed to fetch logs: ' + (err.error || resp.statusText));
+          return;
+        }
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename=(.+)/);
+        const filename = match ? match[1] : 'opensearch_error_logs.csv';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Error downloading logs: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Download error logs (CSV)';
+      }
+    });
+
+    document.getElementById('downloadLensCsv').addEventListener('click', () => {
+      const pods = lastResult?.context?.lens_pod_restarts || [];
+      if (!pods.length) return;
+      const header = 'Pod name,Namespace,Restarts,Age,Status,Created at,Last restart at\n';
+      const rows = pods.map(p => [
+        (p.name || ''), (p.namespace || ''), (p.restart_count ?? 0), (p.age || ''),
+        (p.status || ''), (p.created_at || ''), (p.last_restart_at || '')
+      ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+      downloadFile(header + rows, 'lens_pod_restarts.csv', 'text/csv');
+    });
+
+    document.getElementById('downloadLensJson').addEventListener('click', () => {
+      const pods = lastResult?.context?.lens_pod_restarts || [];
+      const payload = {
+        source: 'Lens / Kubernetes',
+        description: 'Bot engine pod restarts',
+        total_restarts: lastResult?.context?.lens_total_restarts ?? 0,
+        pods_with_restarts: lastResult?.context?.lens_pods_with_restarts ?? 0,
+        pods,
+        exported_at: new Date().toISOString()
+      };
+      downloadFile(JSON.stringify(payload, null, 2), 'lens_pod_restarts.json', 'application/json');
+    });
+
+    document.getElementById('downloadRcaTxt').addEventListener('click', () => {
+      const rca = lastResult?.context?.rca;
+      if (!rca) return;
+      const lines = [];
+      lines.push('ROOT CAUSE ANALYSIS (RCA)');
+      lines.push('='.repeat(40));
+      lines.push('Generated: ' + new Date().toISOString());
+      lines.push('Total errors: ' + (rca.total_errors ?? 0));
+      lines.push('Recent pod restarts (by age): ' + (rca.restart_detected ? 'Yes' : 'No'));
+      lines.push('');
+      if (rca.ai_summary) {
+        lines.push('AI SUMMARY');
+        lines.push('-'.repeat(40));
+        lines.push(rca.ai_summary);
+        lines.push('');
+      }
+      lines.push('SUMMARY');
+      lines.push('-'.repeat(40));
+      lines.push(rca.rca_summary || '');
+      lines.push('');
+      const top = rca.top_tenants || [];
+      if (top.length) {
+        lines.push('IMPACTED TENANTS');
+        lines.push('-'.repeat(40));
+        top.forEach((t, i) => {
+          const codes = (t.error_codes || []).map(c => c.code + ' (' + c.count + ')').join(', ');
+          let line = (i + 1) + '. ' + (t.tenant_name || '-') + '  |  Namespace: ' + (t.namespace || '-') + '  |  Errors: ' + (t.total_errors ?? 0) + '  |  Codes: ' + (codes || '-') + '  |  Twilio errors: ' + (t.twilio_error_count || 0);
+          if (t.restart_detected) {
+            const pods = (t.restart_pods || []).map(p => p.name + ' (age ' + (p.age || '?') + ')').join(', ');
+            line += '  |  Recent restarts: ' + t.restart_count + ' pod(s) — ' + pods;
+          } else {
+            line += '  |  Recent restarts: None';
+          }
+          lines.push(line);
+        });
+        lines.push('');
+      }
+      lines.push('BOT ENGINE ANALYSIS');
+      lines.push('-'.repeat(40));
+      const beErrCodesText = rca.bot_engine_error_codes || {};
+      const beErrKeysText = Object.keys(beErrCodesText);
+      const topNamesText = (rca.top_tenants || []).map(t => t.tenant_name || '-').join(', ');
+      if (beErrKeysText.length) {
+        beErrKeysText.sort((a, b) => (beErrCodesText[b] || 0) - (beErrCodesText[a] || 0));
+        lines.push('Errors found for impacted tenants (' + topNamesText + '): ' + beErrKeysText.map(c => c + ' (' + beErrCodesText[c] + 'x)').join(', '));
+      } else {
+        lines.push('No errors found in bot engine logs for the impacted tenants (' + topNamesText + ')');
+      }
+      lines.push('');
+      const twilioAnalysisText = rca.twilio_analysis || '';
+      if (twilioAnalysisText && twilioAnalysisText !== 'Twilio not configured.') {
+        lines.push('TWILIO ANALYSIS');
+        lines.push('-'.repeat(40));
+        lines.push(twilioAnalysisText);
+        const tErrCodesText = rca.twilio_error_codes || {};
+        const tErrKeysText = Object.keys(tErrCodesText);
+        if (tErrKeysText.length) {
+          tErrKeysText.sort((a, b) => (tErrCodesText[b] || 0) - (tErrCodesText[a] || 0));
+          lines.push('Error codes: ' + tErrKeysText.map(c => c + ' (' + tErrCodesText[c] + 'x)').join(', '));
+        }
+        const twilioFailedText = rca.twilio_failed_list || [];
+        if (twilioFailedText.length) {
+          lines.push('');
+          twilioFailedText.forEach((c, i) => {
+            lines.push((i + 1) + '. [' + (c.start_time || '') + '] account=' + (c.account || '?') + '  ' + (c.from || '?') + ' -> ' + (c.to || '?') + '  status=' + (c.status || '?') + '  duration=' + (c.duration || 0) + 's  error_code=' + (c.error_code || '-') + '  error_message=' + (c.error_message || '-'));
+          });
+        }
+        lines.push('');
+      }
+      if (rca.rca_details?.length) {
+        lines.push('DETAILS');
+        lines.push('-'.repeat(40));
+        rca.rca_details.forEach(d => lines.push(d));
+      }
+      const beConnFindings2 = rca.bot_engine_conn_findings || [];
+      const beErrCodes2 = rca.bot_engine_error_codes || {};
+      const errCodeKeys2 = Object.keys(beErrCodes2);
+      if (errCodeKeys2.length) {
+        lines.push('');
+        lines.push('BOT ENGINE ERROR CODES (by connection_id)');
+        lines.push('-'.repeat(40));
+        errCodeKeys2.sort((a, b) => (beErrCodes2[b] || 0) - (beErrCodes2[a] || 0));
+        lines.push('Error codes: ' + errCodeKeys2.map(c => c + ' (' + beErrCodes2[c] + 'x)').join(', '));
+        if (beConnFindings2.length) {
+          lines.push('');
+          beConnFindings2.forEach((f, i) => {
+            lines.push((i + 1) + '. [' + (f.timestamp || '') + '] connection_id=' + (f.connection_id || '-') + '  tenant=' + (f.tenant_name || '-') + '  error_code=' + (f.error_code || '-') + '  event=' + (f.event_type || '-'));
+            lines.push('   Message: ' + (f.message || '-'));
+          });
+        }
+      }
+      const beFindings = rca.bot_engine_findings || [];
+      if (beFindings.length) {
+        lines.push('');
+        lines.push('BOT ENGINE ERRORS (by context_id)');
+        lines.push('-'.repeat(40));
+        lines.push('Context IDs checked: ' + (rca.context_ids_checked || []).length);
+        lines.push('Errors found: ' + beFindings.length);
+        lines.push('');
+        beFindings.forEach((f, i) => {
+          lines.push((i + 1) + '. [' + (f.timestamp || '') + '] context_id=' + (f.context_id || '-') + '  tenant=' + (f.tenant_name || '-') + '  level=' + (f.level || '-') + '  event=' + (f.event_type || '-'));
+          lines.push('   Message: ' + (f.message || '-'));
+        });
+      }
+      downloadFile(lines.join('\n'), 'rca_report.txt', 'text/plain');
+    });
+
+    document.getElementById('downloadRcaJson').addEventListener('click', () => {
+      const rca = lastResult?.context?.rca;
+      if (!rca) return;
+      const payload = {
+        title: 'Root Cause Analysis (RCA)',
+        exported_at: new Date().toISOString(),
+        ...rca
+      };
+      downloadFile(JSON.stringify(payload, null, 2), 'rca_report.json', 'application/json');
+    });
+
   </script>
 </body>
 </html>

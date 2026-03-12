@@ -15,14 +15,38 @@ scenarios:
 
   - id: auth_errors
     match:
-      error_codes: [400]
+      error_codes: [400, 401, 403]
     steps:
       - check_opensearch
       - get_error_count
       - get_impacted_tenants
+      - check_bot_restarts
+      - check_twilio_logs
       - validate_auth_flow
       - inspect_apt_logs
       - escalate_dev
+
+  - id: gateway_errors
+    match:
+      error_codes: [502, 504]
+    steps:
+      - check_opensearch
+      - get_error_count
+      - get_impacted_tenants
+      - check_prod_connectivity
+      - check_bot_restarts
+      - check_twilio_logs
+      - escalate_devops
+
+  - id: other_errors
+    match:
+      error_codes: [404, 408, 429]
+    steps:
+      - check_opensearch
+      - get_error_count
+      - get_impacted_tenants
+      - check_bot_restarts
+      - check_twilio_logs
 
 decision_rules:
   - if: "500_or_503_spike and calls_connect_successfully and restart_detected"

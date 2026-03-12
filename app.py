@@ -14,11 +14,11 @@ from pathlib import Path
 # Load .env so OPENSEARCH_URL etc. are set before any OpenSearch connection
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent / ".env")
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 except ImportError:
     pass
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 # Project root = folder containing app.py (so templates/ and stream_server_alerts.yaml are found)
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -85,18 +85,36 @@ def api_opensearch_status():
         return jsonify({"ok": False, "connected": False, "error": str(e)})
 
 
+@app.route("/api/k8s/status")
+def api_k8s_status():
+    """Check Kubernetes (Lens) connection."""
+    try:
+        from lens_client import check_k8s_connection
+        connected = check_k8s_connection()
+        return jsonify({"ok": True, "connected": connected})
+    except Exception as e:
+        return jsonify({"ok": False, "connected": False, "error": str(e)})
+
+
+@app.route("/api/twilio/status")
+def api_twilio_status():
+    """Check Twilio connection."""
+    try:
+        from twilio_client import check_twilio_connection
+        result = check_twilio_connection()
+        return jsonify({"ok": result.get("connected", False), **result})
+    except Exception as e:
+        return jsonify({"ok": False, "connected": False, "error": str(e)})
+
+
 @app.route("/api/run", methods=["POST"])
 def api_run():
     data = request.get_json() or {}
-    error_codes = data.get("error_codes")
-    if not error_codes:
-        return jsonify({"ok": False, "error": "error_codes required (e.g. [500, 503]). Matches OPENSEARCH_ERROR_CODE_FIELD."}), 400
+    error_codes = data.get("error_codes") or []
     try:
         codes = [int(c) for c in error_codes]
     except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "error_codes must be integers"}), 400
-    if not codes:
-        return jsonify({"ok": False, "error": "Enter at least one error code"}), 400
+        codes = []
 
     ctx = data.get("context") or {}
     ctx["_error_codes"] = codes  # used by OpenSearch query (OPENSEARCH_ERROR_CODE_FIELD)
@@ -145,19 +163,72 @@ def api_run():
     })
 
 
+@app.route("/api/download/error-logs", methods=["POST"])
+def api_download_error_logs():
+    """Fetch all matching error logs from OpenSearch, enrich with connection_id from conversation logs, and return as CSV."""
+    import csv
+    import io
+    from opensearch_client import query_all_error_logs, lookup_connection_ids
+
+    data = request.get_json() or {}
+    error_codes = data.get("error_codes") or []
+    try:
+        codes = [int(c) for c in error_codes]
+    except (TypeError, ValueError):
+        codes = []
+
+    time_minutes = 60
+    try:
+        time_minutes = max(1, min(43200, int(data.get("time_minutes", 60))))
+    except (TypeError, ValueError):
+        pass
+
+    result = query_all_error_logs(error_codes=codes or None, time_minutes=time_minutes)
+    if result is None:
+        return jsonify({"ok": False, "error": "OpenSearch not configured"}), 400
+    if result.get("error"):
+        return jsonify({"ok": False, "error": result["error"]}), 500
+
+    logs = result.get("logs", [])
+
+    # Look up connection.id from conversation logs for each request_id
+    req_ids = [log.get("request_id", "") for log in logs if log.get("request_id")]
+    conn_id_map = lookup_connection_ids(req_ids) if req_ids else {}
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["timestamp", "error_code", "tenant_name", "request_id", "connection_id", "context_id", "message", "error_stack", "k8s_version"])
+    for log in logs:
+        req_id = log.get("request_id", "")
+        writer.writerow([
+            log.get("timestamp", ""),
+            log.get("error_code", ""),
+            log.get("tenant_name", ""),
+            req_id,
+            conn_id_map.get(req_id, ""),
+            log.get("context_id", ""),
+            str(log.get("message", "")).replace("\n", " ").replace("\r", ""),
+            str(log.get("error_stack", "")).replace("\n", " ").replace("\r", ""),
+            log.get("k8s_version", ""),
+        ])
+
+    csv_content = buf.getvalue()
+    return Response(
+        csv_content,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=opensearch_error_logs_{len(logs)}_rows.csv"},
+    )
+
+
 @app.route("/api/agent/run", methods=["POST"])
 def api_agent_run():
     """Run the alert agent (engine + action rules). Returns result + actions_planned or actions_taken."""
     data = request.get_json() or {}
-    error_codes = data.get("error_codes")
-    if not error_codes:
-        return jsonify({"ok": False, "error": "error_codes required (e.g. [500, 503]). Matches OPENSEARCH_ERROR_CODE_FIELD."}), 400
+    error_codes = data.get("error_codes") or []
     try:
         codes = [int(c) for c in error_codes]
     except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "error_codes must be integers"}), 400
-    if not codes:
-        return jsonify({"ok": False, "error": "Enter at least one error code"}), 400
+        codes = []
     ctx = data.get("context") or {}
     ctx["_error_codes"] = codes
     simulate = {}
