@@ -138,9 +138,12 @@ def _build_blocks(rca: dict[str, Any], time_minutes: int = 15) -> tuple[list[dic
         })
         blocks.append({"type": "divider"})
 
-    # Top 3 impacted tenants
+    # Top 3 impacted tenants (display) + check ALL tenants for critical threshold
     error_threshold = int(os.environ.get("SLACK_ERROR_THRESHOLD", "30"))
     critical_tenants = []
+    for t in top_tenants:
+        if t.get("total_errors", 0) >= error_threshold:
+            critical_tenants.append(t.get("tenant_name", "-"))
 
     if top_tenants:
         tenant_lines = []
@@ -160,7 +163,6 @@ def _build_blocks(rca: dict[str, Any], time_minutes: int = 15) -> tuple[list[dic
             alert_marker = ""
             if errs >= error_threshold:
                 alert_marker = "  :rotating_light: *CRITICAL*"
-                critical_tenants.append(name)
 
             tenant_lines.append(
                 f"*{name}*{alert_marker}\n"
@@ -301,8 +303,10 @@ def _build_rca_text(rca: dict[str, Any], time_minutes: int = 15) -> str:
 
 
 def _resolve_channel_id(token: str, channel_name: str) -> str | None:
-    """Look up a public channel's ID by name, paginating if needed."""
+    """Look up a channel's ID by name, paginating if needed."""
     name = channel_name.lstrip("#")
+    if name.startswith("C") and name == name.upper() and len(name) >= 9:
+        return name
     s = _session()
     cursor = ""
     while True:
