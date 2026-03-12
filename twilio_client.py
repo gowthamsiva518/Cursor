@@ -86,11 +86,39 @@ def _get_excluded_sids() -> set[str]:
     return sids
 
 
+def _get_extra_account_clients() -> list[tuple[str, Any]]:
+    """Parse TWILIO_EXTRA_ACCOUNTS (SID:TOKEN pairs, comma-separated) into clients."""
+    raw = os.environ.get("TWILIO_EXTRA_ACCOUNTS", "").strip()
+    if not raw:
+        return []
+    from twilio.rest import Client
+    result = []
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if ":" not in pair:
+            continue
+        sid, token = pair.split(":", 1)
+        sid, token = sid.strip(), token.strip()
+        if not sid or not token:
+            continue
+        try:
+            cli = Client(sid, token)
+            name = sid
+            try:
+                acct = cli.api.accounts(sid).fetch()
+                name = acct.friendly_name or sid
+            except Exception:
+                pass
+            result.append((name, cli))
+        except Exception:
+            pass
+    return result
+
+
 def _get_subaccount_clients() -> list[tuple[str, Any]]:
     """
     Return a list of (friendly_name, Client) for all active subaccounts
-    under the main account.  Each subaccount is authenticated with its
-    own auth_token (retrieved from the Twilio API).
+    under the main account, plus any extra accounts from TWILIO_EXTRA_ACCOUNTS.
     """
     client = _get_client()
     if client is None:
@@ -114,6 +142,8 @@ def _get_subaccount_clients() -> list[tuple[str, Any]]:
             result.append((name, sub_client))
         except Exception:
             pass
+
+    result.extend(_get_extra_account_clients())
     return result
 
 
@@ -166,7 +196,7 @@ def _extract_calls(
 
         error_code = None
         error_message = None
-        is_failed = status in ("failed", "busy", "no-answer", "canceled")
+        is_failed = status in ("failed", "busy")
 
         if hasattr(c, "error_code") and c.error_code:
             error_code = c.error_code
@@ -213,14 +243,45 @@ def _extract_calls(
     return failed
 
 
+def _filter_subs_by_tenants(
+    sub_clients: list[tuple[str, Any]],
+    tenant_names: list[str],
+) -> list[tuple[str, Any]]:
+    """Keep only subaccounts whose namespace matches an impacted tenant."""
+    ns_map = _get_sid_namespace_map()
+    # Build SID → namespace from the CSV, then reverse: check if any tenant
+    # name is a prefix of the namespace.
+    tenants_lower = [t.lower() for t in tenant_names if t]
+    if not tenants_lower:
+        return sub_clients
+
+    # Build set of SIDs whose namespace starts with any tenant name
+    matching_sids: set[str] = set()
+    for sid, ns in ns_map.items():
+        ns_lower = ns.lower()
+        if any(ns_lower.startswith(t) for t in tenants_lower):
+            matching_sids.add(sid)
+
+    filtered = []
+    for name, cli in sub_clients:
+        sid = cli.account_sid if hasattr(cli, "account_sid") else ""
+        if sid in matching_sids:
+            filtered.append((name, cli))
+    return filtered
+
+
 def query_call_logs(
     time_minutes: int = 60,
     phone_numbers: list[str] | None = None,
     limit: int = 200,
+    tenant_names: list[str] | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch recent call logs within the time window from the main account
-    and all active subaccounts.
+    Fetch recent call logs within the time window from all active subaccounts.
+
+    When *tenant_names* is provided, only subaccounts whose namespace matches
+    one of the given tenant names (startswith) are queried — significantly
+    reducing API calls and latency.
 
     Returns {
         calls: [{ sid, account, from, to, status, direction, duration, start_time, error_code, error_message }],
@@ -247,6 +308,8 @@ def query_call_logs(
 
     # --- Subaccounts only (main account excluded) ---
     sub_clients = _get_subaccount_clients()
+    if tenant_names:
+        sub_clients = _filter_subs_by_tenants(sub_clients, tenant_names)
     per_sub_limit = max(50, limit // max(len(sub_clients), 1))
     max_workers = int(os.environ.get("TWILIO_WORKERS", "100"))
 

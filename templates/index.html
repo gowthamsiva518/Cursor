@@ -289,6 +289,12 @@
       </div>
       <p class="hint">Same relative range as Discover (now-X to now). Errors from OpenSearch in this window.</p>
 
+      <label for="tenantFilter" style="margin-top: 1rem;">Tenant name</label>
+      <select id="tenantFilter" style="width: 100%;">
+        <option value="all" selected>All tenants</option>
+      </select>
+      <p class="hint">Filter analysis to a specific tenant. List loaded from OpenSearch (last 24h).</p>
+
       <div class="checks" style="margin-top: 1rem;">
         <div class="check" style="display:none;"><input type="checkbox" id="as_agent"><label for="as_agent">Run as agent (show planned actions)</label></div>
       </div>
@@ -365,7 +371,11 @@
         <div class="download-row" style="margin-top: 1rem;">
           <button type="button" class="btn secondary" id="downloadRcaTxt">Download RCA (Text)</button>
           <button type="button" class="btn secondary" id="downloadRcaJson">Download RCA (JSON)</button>
+          <button type="button" class="btn secondary" id="sendToSlackBtn" style="background:linear-gradient(135deg,#4A154B,#611f69);color:#fff;border:none;display:none;">
+            <span style="margin-right:0.4rem;">&#128172;</span> Send to Slack
+          </button>
         </div>
+        <div id="slackSendStatus" style="display:none; margin-top:0.5rem; font-size:0.85rem; padding: 0.5rem 0.75rem; border-radius: 8px;"></div>
       </div>
       <p class="scenario" id="outScenario" style="margin-top: 1.5rem;"></p>
       <p class="conclusion" id="outConclusion"></p>
@@ -429,6 +439,19 @@
       return errorCodesEl.value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
     }
 
+    // Load tenant list from OpenSearch
+    const tenantFilterEl = document.getElementById('tenantFilter');
+    fetch('/api/tenants').then(r => r.json()).then(d => {
+      if (d.ok && d.tenants && d.tenants.length) {
+        d.tenants.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          tenantFilterEl.appendChild(opt);
+        });
+      }
+    }).catch(() => {});
+
     runBtn.addEventListener('click', async () => {
       const codes = getSelectedCodes();
       apiErr.style.display = 'none';
@@ -437,6 +460,10 @@
       runBtn.closest('.card').classList.add('loading');
 
       const context = {};
+      const selectedTenant = tenantFilterEl.value;
+      if (selectedTenant && selectedTenant !== 'all') {
+        context._tenant_filter = selectedTenant;
+      }
 
       const asAgent = document.getElementById('as_agent').checked;
       const url = asAgent ? '/api/agent/run' : '/api/run';
@@ -754,7 +781,7 @@
         const resp = await fetch('/api/download/error-logs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error_codes: codes, time_minutes: timeMins })
+          body: JSON.stringify({ error_codes: codes, time_minutes: timeMins, tenant_filter: tenantFilterEl.value !== 'all' ? tenantFilterEl.value : null })
         });
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({}));
@@ -919,6 +946,52 @@
         ...rca
       };
       downloadFile(JSON.stringify(payload, null, 2), 'rca_report.json', 'application/json');
+    });
+
+    // --- Slack integration ---
+    const slackBtn = document.getElementById('sendToSlackBtn');
+    const slackStatus = document.getElementById('slackSendStatus');
+
+    fetch('/api/slack/status').then(r => r.json()).then(d => {
+      if (d.connected) slackBtn.style.display = '';
+    }).catch(() => {});
+
+    slackBtn.addEventListener('click', () => {
+      const rca = lastResult?.context?.rca;
+      if (!rca) return;
+      slackBtn.disabled = true;
+      slackBtn.textContent = 'Sending...';
+      slackStatus.style.display = 'none';
+
+      const timeMins = parseInt(document.querySelector('[name="time_minutes"]')?.value || '15', 10);
+      fetch('/api/slack/send', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ rca, time_minutes: timeMins })
+      })
+      .then(r => r.json())
+      .then(d => {
+        slackStatus.style.display = 'block';
+        if (d.ok) {
+          slackStatus.style.background = 'rgba(34,197,94,0.12)';
+          slackStatus.style.color = '#22c55e';
+          slackStatus.textContent = 'RCA sent to Slack successfully!';
+        } else {
+          slackStatus.style.background = 'rgba(239,68,68,0.12)';
+          slackStatus.style.color = '#ef4444';
+          slackStatus.textContent = 'Slack error: ' + (d.error || 'unknown');
+        }
+      })
+      .catch(e => {
+        slackStatus.style.display = 'block';
+        slackStatus.style.background = 'rgba(239,68,68,0.12)';
+        slackStatus.style.color = '#ef4444';
+        slackStatus.textContent = 'Network error: ' + e.message;
+      })
+      .finally(() => {
+        slackBtn.disabled = false;
+        slackBtn.innerHTML = '<span style="margin-right:0.4rem;">&#128172;</span> Send to Slack';
+      });
     });
 
   </script>

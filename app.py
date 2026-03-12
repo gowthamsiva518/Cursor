@@ -44,13 +44,13 @@ def _apply_time_minutes(ctx: dict, data: dict) -> None:
     """Set ctx['_time_minutes'] from request data (1–43200, mirrors OpenSearch Discover)."""
     val = data.get("time_minutes")
     if val is None:
-        ctx["_time_minutes"] = 60
+        ctx["_time_minutes"] = 15
         return
     try:
         m = int(val)
         ctx["_time_minutes"] = max(1, min(43200, m))  # 1 min to 30 days (Discover range)
     except (TypeError, ValueError):
-        ctx["_time_minutes"] = 60
+        ctx["_time_minutes"] = 15
 
 
 def _client_error_counts_from_context(ctx):
@@ -107,6 +107,17 @@ def api_twilio_status():
         return jsonify({"ok": False, "connected": False, "error": str(e)})
 
 
+@app.route("/api/tenants")
+def api_tenants():
+    """Fetch distinct tenant names from OpenSearch."""
+    try:
+        from opensearch_client import query_tenant_list
+        tenants = query_tenant_list(time_minutes=1440)
+        return jsonify({"ok": True, "tenants": tenants})
+    except Exception as e:
+        return jsonify({"ok": False, "tenants": [], "error": str(e)})
+
+
 @app.route("/api/run", methods=["POST"])
 def api_run():
     data = request.get_json() or {}
@@ -135,7 +146,8 @@ def api_run():
         simulate["auth_fail"] = True
         simulate["auth_ok"] = False
     if simulate:
-        ctx = {"simulate": simulate}
+        preserved = {k: v for k, v in ctx.items() if k.startswith("_")}
+        ctx = {"simulate": simulate, **preserved}
     _apply_time_minutes(ctx, data)
 
     try:
@@ -149,7 +161,7 @@ def api_run():
     # Client-wise (tenant-wise) error counts for UI
     client_error_counts = _client_error_counts_from_context(out_context)
 
-    return jsonify({
+    response_payload = {
         "ok": True,
         "scenario_id": result.get("scenario_id"),
         "conclusion": result.get("conclusion"),
@@ -160,6 +172,104 @@ def api_run():
         "client_error_counts": client_error_counts,
         "total_error_count": out_context.get("error_count") or out_context.get("opensearch_total"),
         "error_codes_used": codes,
+    }
+
+    # Auto-post to Slack if enabled
+    try:
+        from slack_notifier import is_enabled, post_rca_to_slack
+        rca = out_context.get("rca")
+        if is_enabled() and rca:
+            time_mins = out_context.get("_time_minutes") or ctx.get("_time_minutes", 15)
+            post_rca_to_slack(rca, time_minutes=time_mins)
+    except Exception:
+        pass
+
+    return jsonify(response_payload)
+
+
+@app.route("/api/slack/status")
+def api_slack_status():
+    """Check Slack bot connection."""
+    try:
+        from slack_notifier import check_connection
+        result = check_connection()
+        return jsonify({"ok": result.get("connected", False), **result})
+    except Exception as e:
+        return jsonify({"ok": False, "connected": False, "error": str(e)})
+
+
+@app.route("/api/slack/send", methods=["POST"])
+def api_slack_send():
+    """Manually send RCA results to Slack (triggered from UI button)."""
+    try:
+        from slack_notifier import post_rca_to_slack
+        data = request.get_json() or {}
+        rca = data.get("rca")
+        if not rca:
+            return jsonify({"ok": False, "error": "No RCA data provided"}), 400
+        channel = data.get("channel")
+        time_mins = data.get("time_minutes", 15)
+        result = post_rca_to_slack(rca, channel=channel, time_minutes=time_mins)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/slack/command", methods=["POST"])
+def api_slack_command():
+    """Handle Slack slash command /rca."""
+    import threading
+
+    try:
+        from slack_notifier import verify_signature, post_to_response_url
+    except ImportError:
+        return jsonify({"text": "Slack notifier not available"}), 500
+
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+    body = request.get_data(as_text=True)
+
+    if not verify_signature(timestamp, body, signature):
+        return "", 403
+
+    command_text = request.form.get("text", "").strip()
+    response_url = request.form.get("response_url", "")
+
+    parts = command_text.split()
+    error_codes = []
+    time_minutes = 15
+    if parts:
+        try:
+            error_codes = [int(parts[0])]
+        except ValueError:
+            if parts[0].lower() == "all":
+                error_codes = []
+        if len(parts) > 1:
+            try:
+                time_minutes = max(1, min(43200, int(parts[1])))
+            except ValueError:
+                pass
+
+    def _run_and_post():
+        try:
+            ctx = {"_error_codes": error_codes, "_time_minutes": time_minutes}
+            result = run(CONFIG_PATH, error_codes, initial_context=ctx, quiet=True)
+            out_context = result.get("context") or {}
+            rca = out_context.get("rca")
+            if rca and response_url:
+                post_to_response_url(response_url, rca, time_minutes)
+        except Exception:
+            if response_url:
+                import requests as req
+                req.post(response_url, json={"text": "RCA analysis failed. Check server logs."}, timeout=10)
+
+    thread = threading.Thread(target=_run_and_post, daemon=True)
+    thread.start()
+
+    codes_str = ", ".join(str(c) for c in error_codes) if error_codes else "all"
+    return jsonify({
+        "response_type": "ephemeral",
+        "text": f"Running RCA analysis (error codes: {codes_str}, time window: {time_minutes}m)... Results will be posted shortly.",
     })
 
 
@@ -183,7 +293,8 @@ def api_download_error_logs():
     except (TypeError, ValueError):
         pass
 
-    result = query_all_error_logs(error_codes=codes or None, time_minutes=time_minutes)
+    tenant_filter = data.get("tenant_filter") or None
+    result = query_all_error_logs(error_codes=codes or None, time_minutes=time_minutes, tenant_filter=tenant_filter)
     if result is None:
         return jsonify({"ok": False, "error": "OpenSearch not configured"}), 400
     if result.get("error"):
@@ -243,7 +354,8 @@ def api_agent_run():
     if ctx.get("auth_fail") is True:
         simulate["auth_fail"], simulate["auth_ok"] = True, False
     if simulate:
-        ctx = {"simulate": simulate}
+        preserved = {k: v for k, v in ctx.items() if k.startswith("_")}
+        ctx = {"simulate": simulate, **preserved}
     _apply_time_minutes(ctx, data)
 
     execute = data.get("execute") is True
@@ -287,8 +399,25 @@ def api_agent_run():
     })
 
 
-if __name__ == "__main__":
+def _start_slack_listener():
+    """Start the Slack Socket Mode listener if enabled."""
     import os
-    port = int(os.environ.get("PORT", 5000))
+    if os.environ.get("SLACK_LISTENER_ENABLED", "").strip().lower() != "true":
+        return
+    try:
+        from slack_listener import start_listener
+        start_listener()
+    except Exception as e:
+        print(f"  [app] Failed to start Slack listener: {e}")
+
+
+# Start listener once (avoid double-start in Flask debug reloader)
+import os as _os
+if _os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+    _start_slack_listener()
+
+
+if __name__ == "__main__":
+    port = int(_os.environ.get("PORT", 5000))
     print(f"\n  Open in browser: http://127.0.0.1:{port}\n")
     app.run(debug=True, host="0.0.0.0", port=port)

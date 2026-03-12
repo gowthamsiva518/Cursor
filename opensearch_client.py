@@ -76,6 +76,7 @@ def query_errors(
     index: str | None = None,
     sample_size: int = 20,
     error_names: list[str] | None = None,
+    tenant_filter: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Query OpenSearch for errors: count, tenants, sample, and optionally by_error_name.
@@ -98,6 +99,10 @@ def query_errors(
     must = [{"range": {time_field: {"gte": f"now-{time_minutes}m", "lte": "now"}}}]
     must_not: list[dict[str, Any]] = []
     aggs: dict[str, Any] = {}
+
+    # Tenant filter
+    if tenant_filter:
+        must.append({"term": {tenant_agg_field: tenant_filter}})
 
     # --- Discover filters (from URL) ---
     # 1) Log level filter (e.g. level=50 for pino error)
@@ -248,6 +253,7 @@ def query_all_error_logs(
     time_minutes: int = 60,
     index: str | None = None,
     max_logs: int = 10000,
+    tenant_filter: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Fetch ALL matching error log entries (up to max_logs) using the same filters
@@ -265,11 +271,15 @@ def query_all_error_logs(
     error_name_field = os.environ.get("OPENSEARCH_ERROR_NAME_FIELD", "").strip()
     error_stack_field = os.environ.get("OPENSEARCH_ERROR_STACK_FIELD", "rawLog.data.error.stack")
     tenant_field = os.environ.get("OPENSEARCH_TENANT_FIELD", "tenant_name")
+    tenant_agg_field = f"{tenant_field}.keyword" if "." not in tenant_field else tenant_field
 
     must: list[dict[str, Any]] = [
         {"range": {time_field: {"gte": f"now-{time_minutes}m", "lte": "now"}}}
     ]
     must_not: list[dict[str, Any]] = []
+
+    if tenant_filter:
+        must.append({"term": {tenant_agg_field: tenant_filter}})
 
     level_field = os.environ.get("OPENSEARCH_LEVEL_FIELD", "").strip()
     level_value = os.environ.get("OPENSEARCH_LEVEL_VALUE", "").strip()
@@ -737,6 +747,38 @@ def query_restart_logs(
         })
 
     return {"total": total, "logs": logs}
+
+
+def query_tenant_list(time_minutes: int = 1440) -> list[str]:
+    """Fetch distinct tenant names from OpenSearch within the time window."""
+    client = _get_client()
+    if not client:
+        return []
+    index_pattern = os.environ.get("OPENSEARCH_INDEX", "stream-*")
+    time_field = os.environ.get("OPENSEARCH_TIME_FIELD", "@timestamp")
+    tenant_field = os.environ.get("OPENSEARCH_TENANT_FIELD", "tenant_name")
+    tenant_agg_field = f"{tenant_field}.keyword" if "." not in tenant_field else tenant_field
+
+    query_body = {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"range": {time_field: {"gte": f"now-{time_minutes}m", "lte": "now"}}},
+                    {"exists": {"field": tenant_field}},
+                ]
+            }
+        },
+        "aggs": {
+            "tenants": {"terms": {"field": tenant_agg_field, "size": 500, "order": {"_key": "asc"}}}
+        },
+    }
+    try:
+        resp = client.search(index=index_pattern, body=query_body)
+        buckets = resp.get("aggregations", {}).get("tenants", {}).get("buckets", [])
+        return [b["key"] for b in buckets if b.get("key")]
+    except Exception:
+        return []
 
 
 def check_opensearch_connection() -> bool:

@@ -74,7 +74,8 @@ def _query_opensearch_once(ctx: dict[str, Any], time_minutes: int | None = None)
         from opensearch_client import query_errors
         error_codes = ctx.get("_error_codes") or [500, 503, 400]
         error_names = ctx.get("_error_names") if ctx.get("_error_names") else None
-        result = query_errors(error_codes, time_minutes=time_minutes, sample_size=20, error_names=error_names)
+        tenant_filter = ctx.get("_tenant_filter") or None
+        result = query_errors(error_codes, time_minutes=time_minutes, sample_size=20, error_names=error_names, tenant_filter=tenant_filter)
         ctx["opensearch_queried"] = True
         if result is None:
             # OpenSearch not configured (no OPENSEARCH_URL)
@@ -165,7 +166,13 @@ def step_check_bot_restarts(ctx: dict[str, Any]) -> None:
         from lens_client import query_pod_restarts
         k8s_result = query_pod_restarts(time_minutes=time_minutes)
         if k8s_result is not None:
-            pods = k8s_result.get("pods", [])
+            import os
+            _exclude_raw = os.environ.get("K8S_EXCLUDE_PODS", "bot-engine-demo-prod-0")
+            _exclude_pods = {n.strip().lower() for n in _exclude_raw.split(",") if n.strip()}
+            pods = [
+                p for p in k8s_result.get("pods", [])
+                if (p.get("name") or "").lower() not in _exclude_pods
+            ]
             ctx["lens_pod_restarts"] = pods
             ctx["lens_total_restarts"] = k8s_result.get("total_restarts", 0)
             ctx["lens_pods_with_restarts"] = k8s_result.get("pods_with_restarts", 0)
@@ -216,7 +223,13 @@ def step_check_twilio_logs(ctx: dict[str, Any]) -> None:
             ctx["twilio_log_summary"] = "not_configured"
             return
 
-        result = query_call_logs(time_minutes=time_minutes)
+        # Only check Twilio subaccounts matching impacted tenants
+        tenant_names = list(set(
+            row.get("tenant_name") for row in ctx.get("opensearch_by_tenant_error_code", [])
+            if row.get("tenant_name")
+        )) or ctx.get("impacted_tenants", [])
+
+        result = query_call_logs(time_minutes=time_minutes, tenant_names=tenant_names or None)
         if result.get("error"):
             ctx["twilio_error"] = result["error"]
 
@@ -696,7 +709,7 @@ def generate_rca(ctx: dict[str, Any]) -> dict[str, Any]:
     twilio_available = ctx.get("twilio_available", False)
     twilio_calls = ctx.get("twilio_calls") or []
 
-    twilio_failed_list = [c for c in twilio_calls if c.get("error_code") or c.get("status") in ("failed", "busy", "no-answer", "canceled")]
+    twilio_failed_list = [c for c in twilio_calls if c.get("error_code") or c.get("status") in ("failed", "busy")]
 
     # Build namespace → error call count from failed Twilio calls only
     twilio_ns_error_counts: dict[str, int] = {}
