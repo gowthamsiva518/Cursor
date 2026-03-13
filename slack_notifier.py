@@ -296,6 +296,44 @@ def _build_rca_text(rca: dict[str, Any], time_minutes: int = 15) -> str:
             lines.append(f"  ... and {len(twilio_failed) - 100} more failed calls")
         lines.append("")
 
+    # Error pattern analysis
+    patterns = rca.get("error_patterns") or {}
+    if patterns.get("total_analyzed"):
+        lines.append("-" * 60)
+        lines.append(f"ERROR PATTERN ANALYSIS ({patterns['total_analyzed']} logs analyzed)")
+        lines.append("-" * 60)
+
+        top_stacks = patterns.get("top_stacks") or []
+        if top_stacks:
+            lines.append("\nTop Error Stacks:")
+            for s in top_stacks:
+                codes = ", ".join(f"{c}({n})" for c, n in (s.get("error_codes") or {}).items())
+                tenants = ", ".join(s.get("tenants", []))
+                if s.get("tenant_count", 0) > 5:
+                    tenants += f" +{s['tenant_count'] - 5} more"
+                lines.append(f"  [{s['count']}x] {s['stack']}")
+                lines.append(f"         Codes: {codes}  |  Tenants: {tenants or 'unknown'}")
+
+        top_msgs = patterns.get("top_messages") or []
+        if top_msgs:
+            lines.append("\nTop Error Messages:")
+            for m in top_msgs:
+                lines.append(f"  [{m['count']:>4}x] {m['message']}")
+
+        k8s = patterns.get("k8s_versions") or []
+        if k8s:
+            lines.append("\nK8s Version Distribution:")
+            for v in k8s:
+                lines.append(f"  {v['version']:<20} {v['count']} errors")
+
+        ct = patterns.get("cross_tenant") or []
+        if ct:
+            lines.append("\nCross-Tenant Patterns:")
+            for c in ct:
+                scope = "SYSTEMIC" if c.get("systemic") else "tenant-specific"
+                lines.append(f"  Error {c['error_code']}: {c['tenant_count']} tenants ({scope})")
+        lines.append("")
+
     lines.append("=" * 60)
     lines.append("  END OF REPORT")
     lines.append("=" * 60)

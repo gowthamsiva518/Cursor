@@ -49,6 +49,9 @@ def summarize_rca(rca_data: dict[str, Any]) -> str | None:
         "Mention which tenants are affected.\n\n"
         "**Twilio Analysis**: Were there any failed calls or Twilio errors? "
         "Highlight error codes, failed call counts, and affected accounts.\n\n"
+        "**Error Patterns**: What are the most common error stacks and messages? "
+        "Identify the root cause pattern — is it systemic (affecting many tenants) or tenant-specific? "
+        "Mention K8s version correlation if significant.\n\n"
         "**Recommendation**: Concrete next steps to investigate or resolve the issue.\n\n"
         "Rules:\n"
         "- Write in plain, non-technical language so that anyone can understand.\n"
@@ -68,7 +71,7 @@ def summarize_rca(rca_data: dict[str, Any]) -> str | None:
                 {"role": "user", "content": prompt_data},
             ],
             temperature=0.3,
-            max_tokens=900,
+            max_tokens=1200,
         )
         return response.choices[0].message.content.strip()
     except Exception:
@@ -150,6 +153,41 @@ def _build_prompt_data(rca: dict[str, Any]) -> str:
     twilio_accounts = rca.get("twilio_accounts_checked", 0)
     if twilio_accounts:
         lines.append(f"Accounts checked: {twilio_accounts}")
+
+    # ---- Error Patterns data ----
+    patterns = rca.get("error_patterns") or {}
+    if patterns.get("total_analyzed"):
+        lines.append(f"\n=== ERROR PATTERNS ({patterns['total_analyzed']} logs analyzed) ===")
+
+        top_stacks = patterns.get("top_stacks") or []
+        if top_stacks:
+            lines.append("Top error stacks:")
+            for s in top_stacks[:7]:
+                tenants = ", ".join(s.get("tenants", []))
+                if s.get("tenant_count", 0) > 5:
+                    tenants += f" +{s['tenant_count'] - 5} more"
+                codes = ", ".join(f"{c}({n})" for c, n in (s.get("error_codes") or {}).items())
+                lines.append(f"  - [{s['count']}x] {s['stack']}")
+                lines.append(f"    Codes: {codes}  |  Tenants: {tenants or 'unknown'}")
+
+        top_msgs = patterns.get("top_messages") or []
+        if top_msgs:
+            lines.append("Top error messages:")
+            for m in top_msgs[:5]:
+                lines.append(f"  - [{m['count']}x] {m['message']}")
+
+        k8s = patterns.get("k8s_versions") or []
+        if k8s:
+            lines.append("K8s version distribution:")
+            for v in k8s[:5]:
+                lines.append(f"  - {v['version']}: {v['count']} errors")
+
+        ct = patterns.get("cross_tenant") or []
+        if ct:
+            lines.append("Cross-tenant patterns:")
+            for c in ct:
+                scope = "SYSTEMIC" if c.get("systemic") else "tenant-specific"
+                lines.append(f"  - Error {c['error_code']}: {c['tenant_count']} tenants ({scope})")
 
     # ---- Detailed findings ----
     details = rca.get("rca_details") or []

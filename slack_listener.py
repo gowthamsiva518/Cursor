@@ -1,15 +1,17 @@
 """
 Slack Socket Mode listener for automatic RCA on alert messages.
 
-Monitors #stream-server-alerts-triage-agent for messages containing alert
-keywords, runs the alert engine, and posts the RCA as a threaded reply.
+Monitors SLACK_LISTEN_CHANNEL (e.g. #stream-prod-alerts) for messages
+containing alert keywords, runs the alert engine, and posts the RCA
+to SLACK_CHANNEL (e.g. #stream-server-alerts-triage-agent).
 
 Configure via environment:
   SLACK_APP_TOKEN          - App-level token (xapp-...) for Socket Mode
   SLACK_BOT_TOKEN          - Bot token (xoxb-...) for posting replies
   SLACK_LISTENER_ENABLED   - Set to "true" to enable
   SLACK_ALERT_KEYWORDS     - Comma-separated trigger words (optional override)
-  SLACK_CHANNEL            - Channel to monitor
+  SLACK_LISTEN_CHANNEL     - Channel to monitor for alerts (source)
+  SLACK_CHANNEL            - Channel to post RCA reports (destination)
 """
 
 from __future__ import annotations
@@ -61,29 +63,29 @@ def _is_duplicate(ts: str) -> bool:
         return False
 
 
-def _get_channel_id() -> str:
-    """Resolve the monitored channel's ID."""
+def _resolve_channel(env_key: str) -> str:
+    """Resolve a channel's ID from an environment variable."""
     from slack_notifier import _get_token, _resolve_channel_id
     token = _get_token()
-    channel = os.environ.get("SLACK_CHANNEL", "").strip()
+    channel = os.environ.get(env_key, "").strip()
     if not token or not channel:
         return ""
     return _resolve_channel_id(token, channel) or ""
 
 
-def _handle_alert(event: dict[str, Any]) -> None:
-    """Run RCA and post results as a threaded reply under the alert message."""
+def _handle_alert(event: dict[str, Any], dest_channel_id: str) -> None:
+    """Run RCA and post results to the destination channel (with link to source alert)."""
     text = event.get("text", "")
-    channel = event.get("channel", "")
-    thread_ts = event.get("ts", "")
+    source_channel = event.get("channel", "")
+    alert_ts = event.get("ts", "")
 
-    if not thread_ts or not channel:
+    if not alert_ts:
         return
 
     error_codes = _extract_error_codes(text)
     time_minutes = int(os.environ.get("SLACK_ALERT_TIME_MINUTES", "15"))
 
-    print(f"  [slack_listener] Alert detected, running RCA (codes={error_codes}, window={time_minutes}m)")
+    print(f"  [slack_listener] Alert detected in source channel, running RCA (codes={error_codes}, window={time_minutes}m)")
 
     try:
         from alert_engine import run
@@ -100,11 +102,11 @@ def _handle_alert(event: dict[str, Any]) -> None:
             from slack_notifier import post_rca_to_thread
             post_rca_to_thread(
                 rca_data=rca,
-                channel_id=channel,
-                thread_ts=thread_ts,
+                channel_id=source_channel,
+                thread_ts=alert_ts,
                 time_minutes=time_minutes,
             )
-            print(f"  [slack_listener] RCA posted to thread {thread_ts}")
+            print(f"  [slack_listener] RCA posted as thread reply under {alert_ts}")
         else:
             print(f"  [slack_listener] No RCA generated for alert")
     except Exception as e:
@@ -126,12 +128,27 @@ def start_listener() -> threading.Thread | None:
         print("  [slack_listener] SLACK_BOT_TOKEN not set, listener disabled")
         return None
 
-    target_channel_id = _get_channel_id()
-    if not target_channel_id:
-        print("  [slack_listener] Could not resolve SLACK_CHANNEL, listener disabled")
+    listen_channel_id = _resolve_channel("SLACK_LISTEN_CHANNEL") or _resolve_channel("SLACK_CHANNEL")
+    dest_channel_id = _resolve_channel("SLACK_CHANNEL")
+
+    if not listen_channel_id:
+        print("  [slack_listener] Could not resolve listen channel, listener disabled")
+        return None
+    if not dest_channel_id:
+        print("  [slack_listener] Could not resolve SLACK_CHANNEL (destination), listener disabled")
         return None
 
-    print(f"  [slack_listener] Monitoring channel ID {target_channel_id}")
+    # Ensure bot is a member of both channels
+    from slack_notifier import _get_token, _ensure_in_channel
+    token = _get_token()
+    if token:
+        _ensure_in_channel(token, listen_channel_id)
+        _ensure_in_channel(token, dest_channel_id)
+
+    if listen_channel_id == dest_channel_id:
+        print(f"  [slack_listener] Monitoring & posting to channel {listen_channel_id}")
+    else:
+        print(f"  [slack_listener] Monitoring {listen_channel_id} -> posting RCA to {dest_channel_id}")
 
     def _run():
         try:
@@ -161,16 +178,23 @@ def start_listener() -> threading.Thread | None:
                     return
 
                 event = (req.payload or {}).get("event", {})
-                if event.get("type") != "message":
+                etype = event.get("type", "")
+                subtype = event.get("subtype", "")
+                echannel = event.get("channel", "")
+                print(f"  [slack_listener] Event: type={etype} subtype={subtype} channel={echannel}")
+
+                if etype != "message":
                     return
-                # Skip subtypes (edits, joins, bot messages, etc.)
-                if event.get("subtype"):
+                # Skip subtypes except bot_message (alert bots like Datadog)
+                if subtype and subtype != "bot_message":
                     return
                 # Skip messages from this bot
                 if bot_user_id and event.get("user") == bot_user_id:
                     return
-                # Only monitor the target channel
-                if event.get("channel") != target_channel_id:
+                if event.get("bot_id") and event.get("username") == "stream_server_alerts_":
+                    return
+                # Only monitor the listen channel
+                if echannel != listen_channel_id:
                     return
 
                 text = event.get("text", "")
@@ -183,7 +207,7 @@ def start_listener() -> threading.Thread | None:
 
                 # Run in a separate thread to avoid blocking the socket handler
                 threading.Thread(
-                    target=_handle_alert, args=(event,), daemon=True
+                    target=_handle_alert, args=(event, dest_channel_id), daemon=True
                 ).start()
 
             sm_client.socket_mode_request_listeners.append(_handler)

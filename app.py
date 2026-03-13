@@ -174,16 +174,6 @@ def api_run():
         "error_codes_used": codes,
     }
 
-    # Auto-post to Slack if enabled
-    try:
-        from slack_notifier import is_enabled, post_rca_to_slack
-        rca = out_context.get("rca")
-        if is_enabled() and rca:
-            time_mins = out_context.get("_time_minutes") or ctx.get("_time_minutes", 15)
-            post_rca_to_slack(rca, time_minutes=time_mins)
-    except Exception:
-        pass
-
     return jsonify(response_payload)
 
 

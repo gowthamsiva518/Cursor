@@ -783,6 +783,21 @@ def generate_rca(ctx: dict[str, Any]) -> dict[str, Any]:
         "bot_engine_conn_findings": bot_engine_conn_findings,
     }
 
+    # --- Error pattern analysis ---
+    try:
+        from opensearch_client import analyze_error_patterns
+        error_codes_used = ctx.get("_error_codes") or None
+        tenant_filter = ctx.get("_tenant_filter") or None
+        patterns = analyze_error_patterns(
+            error_codes=error_codes_used,
+            time_minutes=time_minutes,
+            tenant_filter=tenant_filter,
+        )
+        if patterns:
+            rca_result["error_patterns"] = patterns
+    except Exception:
+        pass
+
     # --- AI-powered summary ---
     try:
         from ai_summarizer import summarize_rca

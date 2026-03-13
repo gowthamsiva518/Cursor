@@ -360,13 +360,14 @@
             <tbody id="rcaBotEngineConnBody"></tbody>
           </table>
         </div>
-        <div id="rcaBotEngineSection" style="display: none; margin-top: 1rem;">
-          <h4 style="margin: 0 0 0.4rem 0;">Bot Engine Logs (by context_id)</h4>
-          <p class="hint" id="rcaBotEngineSummary" style="margin: 0 0 0.5rem 0;"></p>
-          <table class="client-table" id="rcaBotEngineTable" style="display: none;">
-            <thead><tr><th>Timestamp</th><th>Context ID</th><th>Tenant</th><th>Level</th><th>Event type</th><th>Message</th></tr></thead>
-            <tbody id="rcaBotEngineBody"></tbody>
-          </table>
+        <div id="rcaErrorPatterns" style="display: none; margin-top: 1.25rem;">
+          <h4 style="color: var(--cyan); margin: 0 0 0.6rem 0;">Error Pattern Analysis</h4>
+          <div id="errorPatternStacks" style="margin-bottom: 0.75rem;"></div>
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <div id="errorPatternMessages" style="flex: 1; min-width: 280px;"></div>
+            <div id="errorPatternK8s" style="flex: 1; min-width: 200px;"></div>
+          </div>
+          <div id="errorPatternCrossTenant" style="margin-top: 0.6rem;"></div>
         </div>
         <div class="download-row" style="margin-top: 1rem;">
           <button type="button" class="btn secondary" id="downloadRcaTxt">Download RCA (Text)</button>
@@ -632,7 +633,7 @@
             summaryBullet = '<li><strong>Bot Engine Restarts:</strong> ' + rcaSummaryText + '</li>';
           }
           const detailsEl = document.getElementById('rcaDetails');
-          detailsEl.innerHTML = summaryBullet + botBullet + twilioBullet + (rca.rca_details || []).map(d => '<li>' + d + '</li>').join('');
+          detailsEl.innerHTML = summaryBullet + botBullet + twilioBullet;
           // --- Bot engine error codes by connection_id ---
           const beConnFindings = rca.bot_engine_conn_findings || [];
           const beErrorCodes = rca.bot_engine_error_codes || {};
@@ -662,27 +663,6 @@
             }
           } else {
             beConnSec.style.display = 'none';
-          }
-          // --- Bot engine logs by context_id ---
-          const beFindings = rca.bot_engine_findings || [];
-          const beSec = document.getElementById('rcaBotEngineSection');
-          const beTable = document.getElementById('rcaBotEngineTable');
-          const beSummary = document.getElementById('rcaBotEngineSummary');
-          const beBody = document.getElementById('rcaBotEngineBody');
-          const idsChecked = rca.context_ids_checked || [];
-          if (beFindings.length) {
-            beSec.style.display = 'block';
-            beSummary.textContent = beFindings.length + ' error(s) found in bot engine logs for ' + idsChecked.length + ' context ID(s).';
-            beTable.style.display = 'table';
-            beBody.innerHTML = beFindings.map(f =>
-              '<tr><td>' + (f.timestamp || '-') + '</td><td style="font-size:0.78rem;">' + (f.context_id || '-') + '</td><td>' + (f.tenant_name || '-') + '</td><td>' + (f.level || '-') + '</td><td>' + (f.event_type || '-') + '</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (f.message || '-') + '</td></tr>'
-            ).join('');
-          } else if (idsChecked.length) {
-            beSec.style.display = 'block';
-            beTable.style.display = 'none';
-            beSummary.textContent = 'No errors found in bot engine logs for ' + idsChecked.length + ' context ID(s).';
-          } else {
-            beSec.style.display = 'none';
           }
           // --- Twilio section ---
           const twilioSec = document.getElementById('rcaTwilioSection');
@@ -723,6 +703,75 @@
           } else {
             twilioSec.style.display = 'none';
           }
+          // --- Error Pattern Analysis ---
+          const patterns = rca.error_patterns;
+          const patSec = document.getElementById('rcaErrorPatterns');
+          if (patterns && patterns.total_analyzed > 0) {
+            patSec.style.display = 'block';
+
+            // Top error stacks
+            const stacksEl = document.getElementById('errorPatternStacks');
+            const stacks = patterns.top_stacks || [];
+            if (stacks.length) {
+              let sh = '<p style="font-size:0.85rem;margin:0 0 0.4rem;"><strong>Top Error Stacks</strong> (' + patterns.total_analyzed + ' logs analyzed)</p>';
+              sh += '<table class="client-table"><thead><tr><th>Count</th><th>Error Stack (first line)</th><th>Codes</th><th>Tenants</th></tr></thead><tbody>';
+              stacks.forEach(s => {
+                const codes = Object.entries(s.error_codes || {}).map(([c,n]) => c + '(' + n + ')').join(', ');
+                let tenants = (s.tenants || []).join(', ');
+                if (s.tenant_count > 5) tenants += ' +' + (s.tenant_count - 5) + ' more';
+                sh += '<tr><td><strong>' + s.count + '</strong></td><td style="font-size:0.8rem;max-width:500px;word-break:break-all;">' + (s.stack || '-').replace(/</g,'&lt;') + '</td><td>' + codes + '</td><td>' + tenants + '</td></tr>';
+              });
+              sh += '</tbody></table>';
+              stacksEl.innerHTML = sh;
+            } else { stacksEl.innerHTML = ''; }
+
+            // Top error messages
+            const msgsEl = document.getElementById('errorPatternMessages');
+            const msgs = patterns.top_messages || [];
+            if (msgs.length) {
+              let mh = '<p style="font-size:0.85rem;margin:0 0 0.4rem;"><strong>Top Error Messages</strong></p>';
+              mh += '<table class="client-table"><thead><tr><th>Count</th><th>Message</th></tr></thead><tbody>';
+              msgs.forEach(m => {
+                mh += '<tr><td><strong>' + m.count + '</strong></td><td style="font-size:0.82rem;">' + (m.message || '-').replace(/</g,'&lt;') + '</td></tr>';
+              });
+              mh += '</tbody></table>';
+              msgsEl.innerHTML = mh;
+            } else { msgsEl.innerHTML = ''; }
+
+            // K8s versions
+            const k8sEl = document.getElementById('errorPatternK8s');
+            const k8s = patterns.k8s_versions || [];
+            if (k8s.length) {
+              let kh = '<p style="font-size:0.85rem;margin:0 0 0.4rem;"><strong>K8s Version Distribution</strong></p>';
+              kh += '<table class="client-table"><thead><tr><th>Version</th><th>Errors</th></tr></thead><tbody>';
+              k8s.forEach(v => {
+                kh += '<tr><td>' + v.version + '</td><td>' + v.count + '</td></tr>';
+              });
+              kh += '</tbody></table>';
+              k8sEl.innerHTML = kh;
+            } else { k8sEl.innerHTML = ''; }
+
+            // Cross-tenant patterns
+            const ctEl = document.getElementById('errorPatternCrossTenant');
+            const ct = patterns.cross_tenant || [];
+            if (ct.length) {
+              let ch = '<p style="font-size:0.85rem;margin:0 0 0.4rem;"><strong>Cross-Tenant Error Patterns</strong></p><ul style="margin:0 0 0 1.2rem;font-size:0.85rem;">';
+              ct.forEach(c => {
+                if (c.systemic) {
+                  ch += '<li style="color:var(--rose);">Error <strong>' + c.error_code + '</strong> affects <strong>' + c.tenant_count + ' tenants</strong> &mdash; likely systemic/infrastructure issue</li>';
+                } else if (c.tenant_count === 1) {
+                  ch += '<li>Error <strong>' + c.error_code + '</strong> affects only <strong>' + (c.tenants||[])[0] + '</strong> &mdash; tenant-specific</li>';
+                } else {
+                  ch += '<li>Error <strong>' + c.error_code + '</strong> affects <strong>' + c.tenant_count + ' tenants</strong></li>';
+                }
+              });
+              ch += '</ul>';
+              ctEl.innerHTML = ch;
+            } else { ctEl.innerHTML = ''; }
+          } else {
+            patSec.style.display = 'none';
+          }
+
         } else {
           rcaSection.style.display = 'none';
         }
@@ -899,39 +948,21 @@
         }
         lines.push('');
       }
-      if (rca.rca_details?.length) {
-        lines.push('DETAILS');
+      // Error Pattern Analysis
+      const patterns = rca.error_patterns;
+      if (patterns && patterns.total_analyzed > 0) {
+        lines.push('ERROR PATTERN ANALYSIS (' + patterns.total_analyzed + ' logs analyzed)');
         lines.push('-'.repeat(40));
-        rca.rca_details.forEach(d => lines.push(d));
-      }
-      const beConnFindings2 = rca.bot_engine_conn_findings || [];
-      const beErrCodes2 = rca.bot_engine_error_codes || {};
-      const errCodeKeys2 = Object.keys(beErrCodes2);
-      if (errCodeKeys2.length) {
+        (patterns.top_stacks || []).forEach(s => {
+          const codes = Object.entries(s.error_codes || {}).map(([c,n]) => c + '(' + n + ')').join(', ');
+          lines.push('[' + s.count + 'x] ' + s.stack);
+          lines.push('    Codes: ' + codes + '  |  Tenants: ' + (s.tenants || []).join(', '));
+        });
         lines.push('');
-        lines.push('BOT ENGINE ERROR CODES (by connection_id)');
-        lines.push('-'.repeat(40));
-        errCodeKeys2.sort((a, b) => (beErrCodes2[b] || 0) - (beErrCodes2[a] || 0));
-        lines.push('Error codes: ' + errCodeKeys2.map(c => c + ' (' + beErrCodes2[c] + 'x)').join(', '));
-        if (beConnFindings2.length) {
-          lines.push('');
-          beConnFindings2.forEach((f, i) => {
-            lines.push((i + 1) + '. [' + (f.timestamp || '') + '] connection_id=' + (f.connection_id || '-') + '  tenant=' + (f.tenant_name || '-') + '  error_code=' + (f.error_code || '-') + '  event=' + (f.event_type || '-'));
-            lines.push('   Message: ' + (f.message || '-'));
-          });
-        }
-      }
-      const beFindings = rca.bot_engine_findings || [];
-      if (beFindings.length) {
+        (patterns.top_messages || []).forEach(m => lines.push('[' + m.count + 'x] ' + m.message));
         lines.push('');
-        lines.push('BOT ENGINE ERRORS (by context_id)');
-        lines.push('-'.repeat(40));
-        lines.push('Context IDs checked: ' + (rca.context_ids_checked || []).length);
-        lines.push('Errors found: ' + beFindings.length);
-        lines.push('');
-        beFindings.forEach((f, i) => {
-          lines.push((i + 1) + '. [' + (f.timestamp || '') + '] context_id=' + (f.context_id || '-') + '  tenant=' + (f.tenant_name || '-') + '  level=' + (f.level || '-') + '  event=' + (f.event_type || '-'));
-          lines.push('   Message: ' + (f.message || '-'));
+        (patterns.cross_tenant || []).forEach(c => {
+          lines.push('Error ' + c.error_code + ': ' + c.tenant_count + ' tenants (' + (c.systemic ? 'SYSTEMIC' : 'tenant-specific') + ')');
         });
       }
       downloadFile(lines.join('\n'), 'rca_report.txt', 'text/plain');

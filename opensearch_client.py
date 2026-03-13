@@ -781,6 +781,92 @@ def query_tenant_list(time_minutes: int = 1440) -> list[str]:
         return []
 
 
+def analyze_error_patterns(
+    error_codes: list[int] | None = None,
+    time_minutes: int = 15,
+    tenant_filter: str | None = None,
+    max_logs: int = 2000,
+) -> dict[str, Any] | None:
+    """Analyze error log patterns: stack traces, messages, k8s versions, cross-tenant."""
+    result = query_all_error_logs(
+        error_codes=error_codes, time_minutes=time_minutes,
+        tenant_filter=tenant_filter, max_logs=max_logs,
+    )
+    if not result:
+        return None
+
+    logs = result.get("logs", [])
+    if not logs:
+        return {"total_analyzed": 0, "top_stacks": [], "top_messages": [],
+                "k8s_versions": [], "cross_tenant": []}
+
+    from collections import Counter, defaultdict
+
+    stack_counter: Counter = Counter()
+    message_counter: Counter = Counter()
+    stack_codes: dict[str, Counter] = defaultdict(Counter)
+    stack_tenants: dict[str, set] = defaultdict(set)
+    k8s_counter: Counter = Counter()
+    code_tenants: dict[str, set] = defaultdict(set)
+
+    for log in logs:
+        raw_stack = (log.get("error_stack") or "").strip()
+        msg = (log.get("message") or "").strip()
+        code = str(log.get("error_code", ""))
+        tenant = log.get("tenant_name") or ""
+        k8s_ver = log.get("k8s_version") or ""
+
+        stack_key = raw_stack.split("\n")[0][:200] if raw_stack else "(no stack trace)"
+        msg_key = msg[:200] if msg else "(no message)"
+
+        stack_counter[stack_key] += 1
+        message_counter[msg_key] += 1
+        stack_codes[stack_key][code] += 1
+        if tenant:
+            stack_tenants[stack_key].add(tenant)
+        if k8s_ver:
+            k8s_counter[k8s_ver] += 1
+        if code and tenant:
+            code_tenants[code].add(tenant)
+
+    top_stacks = []
+    for stack, count in stack_counter.most_common(10):
+        codes = dict(stack_codes[stack])
+        tenants = sorted(stack_tenants[stack])
+        top_stacks.append({
+            "stack": stack, "count": count,
+            "error_codes": codes,
+            "tenants": tenants[:5],
+            "tenant_count": len(tenants),
+        })
+
+    top_messages = [
+        {"message": msg, "count": count}
+        for msg, count in message_counter.most_common(10)
+    ]
+
+    k8s_versions = [
+        {"version": ver, "count": count}
+        for ver, count in k8s_counter.most_common(10)
+    ]
+
+    cross_tenant = []
+    for code, tenants in sorted(code_tenants.items(), key=lambda x: len(x[1]), reverse=True):
+        cross_tenant.append({
+            "error_code": code, "tenant_count": len(tenants),
+            "systemic": len(tenants) >= 3,
+            "tenants": sorted(tenants)[:5],
+        })
+
+    return {
+        "total_analyzed": len(logs),
+        "top_stacks": top_stacks,
+        "top_messages": top_messages,
+        "k8s_versions": k8s_versions,
+        "cross_tenant": cross_tenant,
+    }
+
+
 def check_opensearch_connection() -> bool:
     """Return True if OpenSearch is configured and reachable."""
     client = _get_client()
