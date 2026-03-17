@@ -189,6 +189,23 @@ def _build_prompt_data(rca: dict[str, Any]) -> str:
                 scope = "SYSTEMIC" if c.get("systemic") else "tenant-specific"
                 lines.append(f"  - Error {c['error_code']}: {c['tenant_count']} tenants ({scope})")
 
+    # ---- Root Causes ----
+    root_causes = patterns.get("root_causes") or [] if patterns else []
+    if root_causes:
+        lines.append("\n=== ROOT CAUSE CLASSIFICATION ===")
+        for rc in root_causes:
+            lines.append(f"  [{rc['severity']}] {rc['category']}: {rc['count']} errors ({rc['percentage']}%)")
+            lines.append(f"    Description: {rc['description']}")
+            lines.append(f"    Recommendation: {rc['recommendation']}")
+
+    # ---- Connections ----
+    conns = patterns.get("connections") or [] if patterns else []
+    if conns:
+        lines.append("\n=== CONNECTIONS & CORRELATIONS ===")
+        for cn in conns:
+            lines.append(f"  [{cn['type']}] {cn['description']}")
+            lines.append(f"    Impact: {cn['impact']}")
+
     # ---- Detailed findings ----
     details = rca.get("rca_details") or []
     if details:

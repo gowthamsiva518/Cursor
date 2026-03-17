@@ -401,13 +401,18 @@ def _start_slack_listener():
         print(f"  [app] Failed to start Slack listener: {e}")
 
 
-# Start listener once (avoid double-start in Flask debug reloader)
+# Only start the listener in the Werkzeug child process (WERKZEUG_RUN_MAIN)
+# to prevent duplicate listeners when Flask debug reloader forks processes.
+# For non-debug (production), it starts in __main__ below.
 import os as _os
-if _os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+if _os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     _start_slack_listener()
 
 
 if __name__ == "__main__":
     port = int(_os.environ.get("PORT", 5000))
+    debug = _os.environ.get("FLASK_DEBUG", "1") != "0"
+    if not debug:
+        _start_slack_listener()
     print(f"\n  Open in browser: http://127.0.0.1:{port}\n")
-    app.run(debug=True, host="0.0.0.0", port=port)
+    app.run(debug=debug, host="0.0.0.0", port=port)

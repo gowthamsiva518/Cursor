@@ -362,12 +362,9 @@
         </div>
         <div id="rcaErrorPatterns" style="display: none; margin-top: 1.25rem;">
           <h4 style="color: var(--cyan); margin: 0 0 0.6rem 0;">Error Pattern Analysis</h4>
-          <div id="errorPatternStacks" style="margin-bottom: 0.75rem;"></div>
-          <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-            <div id="errorPatternMessages" style="flex: 1; min-width: 280px;"></div>
-            <div id="errorPatternK8s" style="flex: 1; min-width: 200px;"></div>
-          </div>
-          <div id="errorPatternCrossTenant" style="margin-top: 0.6rem;"></div>
+          <p id="errorPatternSummary" style="font-size:0.85rem;color:var(--text-dim);margin:0 0 0.8rem;"></p>
+          <div id="rootCauseCards"></div>
+          <div id="connectionCards" style="margin-top: 0.8rem;"></div>
         </div>
         <div class="download-row" style="margin-top: 1rem;">
           <button type="button" class="btn secondary" id="downloadRcaTxt">Download RCA (Text)</button>
@@ -417,6 +414,22 @@
     timeFilterEl.addEventListener('change', () => {
       customTimeWrap.style.display = timeFilterEl.value === 'custom' ? 'inline' : 'none';
     });
+
+    // Pre-select time window from URL query param (e.g. ?time_minutes=60 from Slack link)
+    (function applyUrlTimeMinutes() {
+      const param = new URLSearchParams(window.location.search).get('time_minutes');
+      if (!param) return;
+      const mins = parseInt(param, 10);
+      if (isNaN(mins) || mins < 1) return;
+      const opts = Array.from(timeFilterEl.options).map(o => o.value);
+      if (opts.includes(String(mins))) {
+        timeFilterEl.value = String(mins);
+      } else {
+        timeFilterEl.value = 'custom';
+        customTimeMinsEl.value = mins;
+        customTimeWrap.style.display = 'inline';
+      }
+    })();
 
     function getTimeMinutes() {
       const v = timeFilterEl.value;
@@ -708,66 +721,43 @@
           const patSec = document.getElementById('rcaErrorPatterns');
           if (patterns && patterns.total_analyzed > 0) {
             patSec.style.display = 'block';
+            document.getElementById('errorPatternSummary').textContent = patterns.total_analyzed + ' error logs analyzed';
 
-            // Top error stacks
-            const stacksEl = document.getElementById('errorPatternStacks');
-            const stacks = patterns.top_stacks || [];
-            if (stacks.length) {
-              let sh = '<p style="font-size:0.85rem;margin:0 0 0.4rem;"><strong>Top Error Stacks</strong> (' + patterns.total_analyzed + ' logs analyzed)</p>';
-              sh += '<table class="client-table"><thead><tr><th>Count</th><th>Error Stack (first line)</th><th>Codes</th><th>Tenants</th></tr></thead><tbody>';
-              stacks.forEach(s => {
-                const codes = Object.entries(s.error_codes || {}).map(([c,n]) => c + '(' + n + ')').join(', ');
-                let tenants = (s.tenants || []).join(', ');
-                if (s.tenant_count > 5) tenants += ' +' + (s.tenant_count - 5) + ' more';
-                sh += '<tr><td><strong>' + s.count + '</strong></td><td style="font-size:0.8rem;max-width:500px;word-break:break-all;">' + (s.stack || '-').replace(/</g,'&lt;') + '</td><td>' + codes + '</td><td>' + tenants + '</td></tr>';
+            // Root Causes — clean cards with "Root Cause" and "How to Fix"
+            const rootCauses = patterns.root_causes || [];
+            const rcCards = document.getElementById('rootCauseCards');
+            if (rootCauses.length) {
+              let rcHtml = '';
+              rootCauses.forEach((rc, idx) => {
+                const sevColor = rc.severity === 'Critical' ? '#e74c3c' : rc.severity === 'High' ? '#f1c40f' : rc.severity === 'Medium' ? '#1abc9c' : '#95a5a6';
+                const sevBg = rc.severity === 'Critical' ? 'rgba(231,76,60,0.08)' : rc.severity === 'High' ? 'rgba(241,196,15,0.06)' : 'rgba(26,188,156,0.05)';
+                const sevIcon = rc.severity === 'Critical' ? '&#9888;' : rc.severity === 'High' ? '&#9650;' : '&#9679;';
+                rcHtml += '<div style="background:' + sevBg + ';border-left:4px solid ' + sevColor + ';border-radius:10px;padding:0.9rem 1.1rem;margin-bottom:0.75rem;">';
+                rcHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">';
+                rcHtml += '<span style="font-weight:700;font-size:0.95rem;color:' + sevColor + ';">' + sevIcon + ' ' + rc.category + '</span>';
+                rcHtml += '<span style="font-size:0.78rem;background:' + sevColor + ';color:#000;padding:2px 10px;border-radius:12px;font-weight:600;">' + rc.severity + ' &bull; ' + rc.count + ' errors (' + rc.percentage + '%)</span>';
+                rcHtml += '</div>';
+                rcHtml += '<div style="margin-bottom:0.45rem;"><span style="font-weight:600;font-size:0.85rem;color:var(--text);">Root Cause:</span> <span style="font-size:0.85rem;color:var(--text-dim);">' + rc.description + '</span></div>';
+                rcHtml += '<div><span style="font-weight:600;font-size:0.85rem;color:#2ecc71;">How to Fix:</span> <span style="font-size:0.85rem;color:var(--text-dim);">' + rc.recommendation + '</span></div>';
+                rcHtml += '</div>';
               });
-              sh += '</tbody></table>';
-              stacksEl.innerHTML = sh;
-            } else { stacksEl.innerHTML = ''; }
+              rcCards.innerHTML = rcHtml;
+            } else { rcCards.innerHTML = '<p style="font-size:0.85rem;color:var(--text-dim);">No specific root causes identified from the error patterns.</p>'; }
 
-            // Top error messages
-            const msgsEl = document.getElementById('errorPatternMessages');
-            const msgs = patterns.top_messages || [];
-            if (msgs.length) {
-              let mh = '<p style="font-size:0.85rem;margin:0 0 0.4rem;"><strong>Top Error Messages</strong></p>';
-              mh += '<table class="client-table"><thead><tr><th>Count</th><th>Message</th></tr></thead><tbody>';
-              msgs.forEach(m => {
-                mh += '<tr><td><strong>' + m.count + '</strong></td><td style="font-size:0.82rem;">' + (m.message || '-').replace(/</g,'&lt;') + '</td></tr>';
+            // Connections — simple list
+            const conns = patterns.connections || [];
+            const connCards = document.getElementById('connectionCards');
+            if (conns.length) {
+              let connHtml = '<h4 style="color:var(--teal);margin:0 0 0.5rem;font-size:0.95rem;">Common Connections</h4>';
+              conns.forEach(cn => {
+                connHtml += '<div style="background:rgba(46,204,113,0.05);border-left:4px solid var(--teal);border-radius:10px;padding:0.75rem 1rem;margin-bottom:0.6rem;">';
+                connHtml += '<div style="font-weight:600;font-size:0.9rem;color:var(--teal);margin-bottom:0.3rem;">' + cn.type + '</div>';
+                connHtml += '<div style="font-size:0.85rem;color:var(--text-dim);margin-bottom:0.25rem;">' + cn.description + '</div>';
+                connHtml += '<div style="font-size:0.83rem;color:var(--gold);"><strong>Impact:</strong> ' + cn.impact + '</div>';
+                connHtml += '</div>';
               });
-              mh += '</tbody></table>';
-              msgsEl.innerHTML = mh;
-            } else { msgsEl.innerHTML = ''; }
-
-            // K8s versions
-            const k8sEl = document.getElementById('errorPatternK8s');
-            const k8s = patterns.k8s_versions || [];
-            if (k8s.length) {
-              let kh = '<p style="font-size:0.85rem;margin:0 0 0.4rem;"><strong>K8s Version Distribution</strong></p>';
-              kh += '<table class="client-table"><thead><tr><th>Version</th><th>Errors</th></tr></thead><tbody>';
-              k8s.forEach(v => {
-                kh += '<tr><td>' + v.version + '</td><td>' + v.count + '</td></tr>';
-              });
-              kh += '</tbody></table>';
-              k8sEl.innerHTML = kh;
-            } else { k8sEl.innerHTML = ''; }
-
-            // Cross-tenant patterns
-            const ctEl = document.getElementById('errorPatternCrossTenant');
-            const ct = patterns.cross_tenant || [];
-            if (ct.length) {
-              let ch = '<p style="font-size:0.85rem;margin:0 0 0.4rem;"><strong>Cross-Tenant Error Patterns</strong></p><ul style="margin:0 0 0 1.2rem;font-size:0.85rem;">';
-              ct.forEach(c => {
-                if (c.systemic) {
-                  ch += '<li style="color:var(--rose);">Error <strong>' + c.error_code + '</strong> affects <strong>' + c.tenant_count + ' tenants</strong> &mdash; likely systemic/infrastructure issue</li>';
-                } else if (c.tenant_count === 1) {
-                  ch += '<li>Error <strong>' + c.error_code + '</strong> affects only <strong>' + (c.tenants||[])[0] + '</strong> &mdash; tenant-specific</li>';
-                } else {
-                  ch += '<li>Error <strong>' + c.error_code + '</strong> affects <strong>' + c.tenant_count + ' tenants</strong></li>';
-                }
-              });
-              ch += '</ul>';
-              ctEl.innerHTML = ch;
-            } else { ctEl.innerHTML = ''; }
+              connCards.innerHTML = connHtml;
+            } else { connCards.innerHTML = ''; }
           } else {
             patSec.style.display = 'none';
           }
@@ -952,18 +942,29 @@
       const patterns = rca.error_patterns;
       if (patterns && patterns.total_analyzed > 0) {
         lines.push('ERROR PATTERN ANALYSIS (' + patterns.total_analyzed + ' logs analyzed)');
-        lines.push('-'.repeat(40));
-        (patterns.top_stacks || []).forEach(s => {
-          const codes = Object.entries(s.error_codes || {}).map(([c,n]) => c + '(' + n + ')').join(', ');
-          lines.push('[' + s.count + 'x] ' + s.stack);
-          lines.push('    Codes: ' + codes + '  |  Tenants: ' + (s.tenants || []).join(', '));
-        });
-        lines.push('');
-        (patterns.top_messages || []).forEach(m => lines.push('[' + m.count + 'x] ' + m.message));
-        lines.push('');
-        (patterns.cross_tenant || []).forEach(c => {
-          lines.push('Error ' + c.error_code + ': ' + c.tenant_count + ' tenants (' + (c.systemic ? 'SYSTEMIC' : 'tenant-specific') + ')');
-        });
+        lines.push('='.repeat(40));
+        const rootCauses = patterns.root_causes || [];
+        if (rootCauses.length) {
+          rootCauses.forEach((rc, i) => {
+            lines.push('');
+            lines.push((i + 1) + '. [' + rc.severity + '] ' + rc.category + ' — ' + rc.count + ' errors (' + rc.percentage + '%)');
+            lines.push('   Root Cause: ' + rc.description);
+            lines.push('   How to Fix: ' + rc.recommendation);
+          });
+          lines.push('');
+        }
+        const conns = patterns.connections || [];
+        if (conns.length) {
+          lines.push('COMMON CONNECTIONS');
+          lines.push('-'.repeat(40));
+          conns.forEach(cn => {
+            lines.push('');
+            lines.push('[' + cn.type + ']');
+            lines.push('  ' + cn.description);
+            lines.push('  Impact: ' + cn.impact);
+          });
+          lines.push('');
+        }
       }
       downloadFile(lines.join('\n'), 'rca_report.txt', 'text/plain');
     });

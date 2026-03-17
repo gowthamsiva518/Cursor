@@ -23,6 +23,15 @@ import time
 from pathlib import Path
 from typing import Any
 
+import logging
+
+_log = logging.getLogger("slack_listener")
+if not _log.handlers:
+    _fh = logging.FileHandler(Path(__file__).resolve().parent / "slack_listener.log", encoding="utf-8")
+    _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    _log.addHandler(_fh)
+    _log.setLevel(logging.DEBUG)
+
 _processed_lock = threading.Lock()
 _processed_ts: dict[str, float] = {}
 _DEDUP_TTL = 300  # ignore duplicate ts within 5 minutes
@@ -44,9 +53,65 @@ def _should_trigger(text: str) -> bool:
 
 
 def _extract_error_codes(text: str) -> list[int]:
-    """Pull numeric error codes (4-5 digit numbers) from message text."""
-    candidates = re.findall(r"\b(\d{4,5})\b", text)
-    return [int(c) for c in candidates]
+    """Pull HTTP error codes (3-digit, 400-599) from message text.
+
+    Only extracts codes that look like real HTTP status codes to avoid
+    picking up noise (years, port numbers, URL fragments, etc.).
+    """
+    candidates = re.findall(r"\b([45]\d{2})\b", text)
+    seen: set[int] = set()
+    codes: list[int] = []
+    for c in candidates:
+        val = int(c)
+        if 400 <= val <= 599 and val not in seen:
+            seen.add(val)
+            codes.append(val)
+    return codes
+
+
+def _extract_trigger_count(text: str) -> int | None:
+    """Extract the monitor's reported error count from 'N errors in the last M minutes'."""
+    m = re.search(r"(\d+)\s+errors?\s+in\s+the\s+last\s+\d+\s+min", text, re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
+def _extract_dashboard_time_range(text: str) -> dict[str, Any] | None:
+    """Extract the absolute time range from alert text.
+
+    Parses ``time:(from:'<ISO>',to:'<ISO>')`` from OpenSearch URLs, or
+    falls back to ``Period start`` / ``Period end`` lines.
+
+    Returns ``{"time_from": <ISO>, "time_to": <ISO>, "time_minutes": <int>}``
+    or None when no time range can be determined.
+    """
+    from datetime import datetime, timezone
+    import math
+
+    # Try OpenSearch URL pattern first (most precise)
+    m = re.search(r"time:\(from:'([^']+)',\s*to:'([^']+)'\)", text)
+    if not m:
+        m_start = re.search(r"Period start:\s*(\d{4}-\d{2}-\d{2}T[\d:.]+Z)", text)
+        m_end = re.search(r"Period end:\s*(\d{4}-\d{2}-\d{2}T[\d:.]+Z)", text)
+        if m_start and m_end:
+            from_str, to_str = m_start.group(1), m_end.group(1)
+        else:
+            return None
+    else:
+        from_str, to_str = m.group(1), m.group(2)
+
+    try:
+        fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
+        t_from = datetime.strptime(from_str, fmt).replace(tzinfo=timezone.utc)
+        t_to = datetime.strptime(to_str, fmt).replace(tzinfo=timezone.utc)
+        delta = (t_to - t_from).total_seconds() / 60.0
+        mins = max(1, min(43200, math.ceil(delta)))
+        return {
+            "time_from": from_str,
+            "time_to": to_str,
+            "time_minutes": mins,
+        }
+    except (ValueError, OverflowError):
+        return None
 
 
 def _is_duplicate(ts: str) -> bool:
@@ -82,10 +147,31 @@ def _handle_alert(event: dict[str, Any], dest_channel_id: str) -> None:
     if not alert_ts:
         return
 
-    error_codes = _extract_error_codes(text)
-    time_minutes = int(os.environ.get("SLACK_ALERT_TIME_MINUTES", "15"))
+    _log.info("--- ALERT START (ts=%s) ---", alert_ts)
+    _log.info("Message text (first 500 chars): %s", text[:500])
 
-    print(f"  [slack_listener] Alert detected in source channel, running RCA (codes={error_codes}, window={time_minutes}m)")
+    error_codes = _extract_error_codes(text)
+    _log.info("Extracted error_codes: %s", error_codes)
+
+    trigger_count = _extract_trigger_count(text)
+    _log.info("Monitor reported error count: %s", trigger_count)
+
+    dashboard = _extract_dashboard_time_range(text)
+    default_minutes = int(os.environ.get("SLACK_ALERT_TIME_MINUTES", "15"))
+
+    if dashboard:
+        time_minutes = dashboard["time_minutes"]
+        time_from = dashboard["time_from"]
+        time_to = dashboard["time_to"]
+        _log.info("Using dashboard range: %s -> %s (%dm)", time_from, time_to, time_minutes)
+    else:
+        time_minutes = default_minutes
+        time_from = None
+        time_to = None
+        _log.info("No dashboard range found, using default window: %dm", time_minutes)
+
+    _log.info("Running RCA (codes=%s, window=%dm, time_from=%s, time_to=%s)",
+              error_codes, time_minutes, time_from, time_to)
 
     try:
         from alert_engine import run
@@ -94,9 +180,24 @@ def _handle_alert(event: dict[str, Any], dest_channel_id: str) -> None:
             "_error_codes": error_codes,
             "_time_minutes": time_minutes,
         }
+        if time_from and time_to:
+            ctx["_time_from"] = time_from
+            ctx["_time_to"] = time_to
+        if trigger_count is not None:
+            ctx["_monitor_error_count"] = trigger_count
+
+        _log.info("Calling run() with ctx=%s", {k: v for k, v in ctx.items()})
         result = run(config_path, error_codes, initial_context=ctx, quiet=True)
         out_context = result.get("context") or {}
         rca = out_context.get("rca")
+
+        _log.info("RCA result: total_errors=%s, tenants=%s, opensearch_total=%s, opensearch_available=%s",
+                   rca.get("total_errors") if rca else "NO_RCA",
+                   len(rca.get("top_tenants", [])) if rca else 0,
+                   out_context.get("opensearch_total"),
+                   out_context.get("opensearch_available"))
+        if out_context.get("opensearch_error"):
+            _log.warning("OpenSearch error: %s", out_context["opensearch_error"])
 
         if rca:
             from slack_notifier import post_rca_to_thread
@@ -106,11 +207,12 @@ def _handle_alert(event: dict[str, Any], dest_channel_id: str) -> None:
                 thread_ts=alert_ts,
                 time_minutes=time_minutes,
             )
-            print(f"  [slack_listener] RCA posted as thread reply under {alert_ts}")
+            _log.info("RCA posted as thread reply under %s", alert_ts)
         else:
-            print(f"  [slack_listener] No RCA generated for alert")
+            _log.warning("No RCA generated for alert")
     except Exception as e:
-        print(f"  [slack_listener] Error running RCA: {e}")
+        _log.exception("Error running RCA: %s", e)
+    _log.info("--- ALERT END (ts=%s) ---", alert_ts)
 
 
 def start_listener() -> threading.Thread | None:
@@ -164,11 +266,14 @@ def start_listener() -> threading.Thread | None:
             )
 
             bot_user_id = ""
+            _own_bot_id = ""
             try:
                 auth = web_client.auth_test()
                 bot_user_id = auth.get("user_id", "")
-            except Exception:
-                pass
+                _own_bot_id = auth.get("bot_id", "")
+                _log.info("Bot identity: user_id=%s, bot_id=%s", bot_user_id, _own_bot_id)
+            except Exception as e:
+                _log.warning("auth_test failed: %s", e)
 
             def _handler(client: SocketModeClient, req: SocketModeRequest):
                 # Always acknowledge
@@ -181,17 +286,21 @@ def start_listener() -> threading.Thread | None:
                 etype = event.get("type", "")
                 subtype = event.get("subtype", "")
                 echannel = event.get("channel", "")
-                print(f"  [slack_listener] Event: type={etype} subtype={subtype} channel={echannel}")
+                _log.debug("Event: type=%s subtype=%s channel=%s user=%s bot_id=%s",
+                           etype, subtype, echannel, event.get("user", ""), event.get("bot_id", ""))
 
                 if etype != "message":
                     return
                 # Skip subtypes except bot_message (alert bots like Datadog)
                 if subtype and subtype != "bot_message":
                     return
-                # Skip messages from this bot
+                # Skip messages from this bot (check user_id and bot_id)
                 if bot_user_id and event.get("user") == bot_user_id:
+                    _log.debug("Skipping own message (user_id match)")
                     return
-                if event.get("bot_id") and event.get("username") == "stream_server_alerts_":
+                msg_bot_id = event.get("bot_id", "")
+                if msg_bot_id and msg_bot_id == _own_bot_id:
+                    _log.debug("Skipping own message (bot_id match: %s)", msg_bot_id)
                     return
                 # Only monitor the listen channel
                 if echannel != listen_channel_id:

@@ -108,6 +108,20 @@ def _build_blocks(rca: dict[str, Any], time_minutes: int = 15) -> tuple[list[dic
     ist = timezone(timedelta(hours=5, minutes=30))
     report_time = datetime.now(ist).strftime("%b %d, %Y %I:%M %p IST")
 
+    # Build time window display: show actual range when available, else "X min"
+    time_from = rca.get("time_from")
+    time_to = rca.get("time_to")
+    if time_from and time_to:
+        try:
+            fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
+            t_from = datetime.strptime(time_from, fmt).replace(tzinfo=timezone.utc).astimezone(ist)
+            t_to = datetime.strptime(time_to, fmt).replace(tzinfo=timezone.utc).astimezone(ist)
+            time_display = f"{t_from.strftime('%I:%M %p')} – {t_to.strftime('%I:%M %p IST')} ({time_minutes} min)"
+        except (ValueError, TypeError):
+            time_display = f"{time_minutes} min"
+    else:
+        time_display = f"{time_minutes} min"
+
     # Header
     blocks.append({
         "type": "header",
@@ -120,7 +134,7 @@ def _build_blocks(rca: dict[str, Any], time_minutes: int = 15) -> tuple[list[dic
         "type": "section",
         "text": {"type": "mrkdwn", "text": (
             f"*Total Errors:* {total_errors}  |  "
-            f"*Time Window:* {time_minutes} min  |  "
+            f"*Time Window:* {time_display}  |  "
             f"*Tenants:* {tenant_count}  |  "
             f"*Pod Restarts:* {restart_text}\n"
             f"_{report_time}_"
@@ -183,16 +197,103 @@ def _build_blocks(rca: dict[str, Any], time_minutes: int = 15) -> tuple[list[dic
         })
         blocks.append({"type": "divider"})
 
-    # Footer with agent link
+    # --- Error Pattern Analysis ---
+    patterns = rca.get("error_patterns") or {}
+    if patterns.get("total_analyzed"):
+        _append_pattern_blocks(blocks, patterns)
+
+    # Footer with agent link (pass time window so the dashboard mirrors the same range)
     agent_url = os.environ.get("SLACK_AGENT_URL", "http://127.0.0.1:5000")
+    separator = "&" if "?" in agent_url else "?"
+    dashboard_url = f"{agent_url}{separator}time_minutes={time_minutes}"
     blocks.append({
         "type": "context",
         "elements": [
-            {"type": "mrkdwn", "text": f"Full details in the attached report  |  <{agent_url}|Open Alert Agent>  |  Stream Server Alert Engine"}
+            {"type": "mrkdwn", "text": f"Full details in the attached report  |  <{dashboard_url}|View Dashboard>  |  Stream Server Alert Engine"}
         ]
     })
 
     return blocks, critical_tenants
+
+
+def _append_pattern_blocks(blocks: list[dict], patterns: dict[str, Any]) -> None:
+    """Append Error Pattern Analysis blocks to the Slack message."""
+    analyzed = patterns.get("total_analyzed", 0)
+
+    # Root Cause Classification
+    root_causes = patterns.get("root_causes") or []
+    if root_causes:
+        severity_icon = {"Critical": ":red_circle:", "High": ":large_orange_circle:", "Medium": ":large_yellow_circle:", "Low": ":white_circle:"}
+        rc_lines = []
+        for rc in root_causes[:5]:
+            icon = severity_icon.get(rc["severity"], ":white_circle:")
+            rc_lines.append(
+                f"{icon} *{rc['category']}*  —  {rc['count']} errors ({rc['percentage']}%)"
+            )
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Root Cause Analysis* ({analyzed} logs)\n" + "\n".join(rc_lines)}
+        })
+        blocks.append({"type": "divider"})
+
+    # Error Code Distribution + Cross-Tenant
+    cross_tenant = patterns.get("cross_tenant") or []
+    if cross_tenant:
+        ct_lines = []
+        for c in cross_tenant:
+            scope = ":warning: *SYSTEMIC*" if c.get("systemic") else "tenant-specific"
+            tenants = ", ".join(c.get("tenants", [])[:5])
+            extra = f" +{c['tenant_count'] - 5} more" if c.get("tenant_count", 0) > 5 else ""
+            ct_lines.append(
+                f"Error `{c['error_code']}`: {c['tenant_count']} tenants ({scope})\n"
+                f"      _{tenants}{extra}_"
+            )
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*Error Code Distribution*\n" + "\n".join(ct_lines)}
+        })
+
+    # Top Error Messages (compact)
+    top_msgs = patterns.get("top_messages") or []
+    if top_msgs:
+        msg_lines = []
+        for m in top_msgs[:5]:
+            msg_text = m["message"][:80] + ("..." if len(m["message"]) > 80 else "")
+            msg_lines.append(f"`{m['count']:>3}x`  {msg_text}")
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*Top Error Messages*\n" + "\n".join(msg_lines)}
+        })
+
+    # K8s Version Distribution (compact bar-style)
+    k8s = patterns.get("k8s_versions") or []
+    if k8s:
+        total_k8s = sum(v["count"] for v in k8s) or 1
+        ver_lines = []
+        for v in k8s[:5]:
+            pct = round(v["count"] * 100 / total_k8s)
+            bar = "\u2588" * max(1, pct // 5)
+            ver_lines.append(f"`{v['version']:<8}` {bar} {v['count']} ({pct}%)")
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*K8s Version Distribution*\n" + "\n".join(ver_lines)}
+        })
+
+    if cross_tenant or top_msgs or k8s:
+        blocks.append({"type": "divider"})
+
+    # Connections & Correlations
+    conns = patterns.get("connections") or []
+    if conns:
+        conn_lines = []
+        for cn in conns[:3]:
+            desc = _truncate(cn["description"], 200)
+            conn_lines.append(f":link: *{cn['type']}*\n{desc}")
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*Correlations*\n" + "\n\n".join(conn_lines)}
+        })
+        blocks.append({"type": "divider"})
 
 
 def _build_rca_text(rca: dict[str, Any], time_minutes: int = 15) -> str:
@@ -264,7 +365,10 @@ def _build_rca_text(rca: dict[str, Any], time_minutes: int = 15) -> str:
         lines.append("RCA DETAILS")
         lines.append("-" * 60)
         for d in details:
-            lines.append(f"  • {d}")
+            if d.startswith("  •"):
+                lines.append(f"  {d.strip()}")
+            else:
+                lines.append(f"  {d}")
         lines.append("")
 
     twilio_errors = rca.get("twilio_error_codes") or {}
@@ -332,6 +436,28 @@ def _build_rca_text(rca: dict[str, Any], time_minutes: int = 15) -> str:
             for c in ct:
                 scope = "SYSTEMIC" if c.get("systemic") else "tenant-specific"
                 lines.append(f"  Error {c['error_code']}: {c['tenant_count']} tenants ({scope})")
+
+        root_causes = patterns.get("root_causes") or []
+        if root_causes:
+            lines.append("")
+            lines.append("-" * 60)
+            lines.append("ROOT CAUSE CLASSIFICATION")
+            lines.append("-" * 60)
+            for rc in root_causes:
+                lines.append(f"\n  [{rc['severity']}] {rc['category']}: {rc['count']} errors ({rc['percentage']}%)")
+                lines.append(f"    {rc['description']}")
+                lines.append(f"    Recommendation: {rc['recommendation']}")
+
+        conns = patterns.get("connections") or []
+        if conns:
+            lines.append("")
+            lines.append("-" * 60)
+            lines.append("CONNECTIONS & CORRELATIONS")
+            lines.append("-" * 60)
+            for cn in conns:
+                lines.append(f"\n  [{cn['type']}]")
+                lines.append(f"    {cn['description']}")
+                lines.append(f"    Impact: {cn['impact']}")
         lines.append("")
 
     lines.append("=" * 60)

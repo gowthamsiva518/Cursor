@@ -61,6 +61,24 @@ def _get_client() -> Any | None:
         return None
 
 
+def _time_range(
+    time_field: str,
+    time_minutes: int,
+    time_from: str | None = None,
+    time_to: str | None = None,
+) -> dict[str, Any]:
+    """Build an OpenSearch range filter for the time field.
+
+    When ``time_from`` and ``time_to`` are provided (ISO-8601 strings),
+    uses absolute boundaries so the query matches the exact alert window
+    even if it runs later.  Otherwise falls back to the usual relative
+    ``now-Xm`` range.
+    """
+    if time_from and time_to:
+        return {"range": {time_field: {"gte": time_from, "lte": time_to}}}
+    return {"range": {time_field: {"gte": f"now-{time_minutes}m", "lte": "now"}}}
+
+
 def _get_nested(obj: dict, path: str) -> Any:
     """Get nested key, e.g. rawLog.data.error.name."""
     for part in path.split("."):
@@ -77,6 +95,8 @@ def query_errors(
     sample_size: int = 20,
     error_names: list[str] | None = None,
     tenant_filter: str | None = None,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Query OpenSearch for errors: count, tenants, sample, and optionally by_error_name.
@@ -96,7 +116,7 @@ def query_errors(
     tenant_agg_field = f"{tenant_field}.keyword" if "." not in tenant_field else tenant_field
 
     # Build filter: time range always
-    must = [{"range": {time_field: {"gte": f"now-{time_minutes}m", "lte": "now"}}}]
+    must = [_time_range(time_field, time_minutes, time_from, time_to)]
     must_not: list[dict[str, Any]] = []
     aggs: dict[str, Any] = {}
 
@@ -254,6 +274,8 @@ def query_all_error_logs(
     index: str | None = None,
     max_logs: int = 10000,
     tenant_filter: str | None = None,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Fetch ALL matching error log entries (up to max_logs) using the same filters
@@ -273,9 +295,7 @@ def query_all_error_logs(
     tenant_field = os.environ.get("OPENSEARCH_TENANT_FIELD", "tenant_name")
     tenant_agg_field = f"{tenant_field}.keyword" if "." not in tenant_field else tenant_field
 
-    must: list[dict[str, Any]] = [
-        {"range": {time_field: {"gte": f"now-{time_minutes}m", "lte": "now"}}}
-    ]
+    must: list[dict[str, Any]] = [_time_range(time_field, time_minutes, time_from, time_to)]
     must_not: list[dict[str, Any]] = []
 
     if tenant_filter:
@@ -355,6 +375,8 @@ def query_bot_engine_logs(
     time_minutes: int = 60,
     index: str | None = None,
     max_logs: int = 200,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Query bot engine logs by context_id(s) to find errors/events
@@ -392,7 +414,7 @@ def query_bot_engine_logs(
         "query": {
             "bool": {
                 "filter": [
-                    {"range": {time_field: {"gte": f"now-{time_minutes}m", "lte": "now"}}},
+                    _time_range(time_field, time_minutes, time_from, time_to),
                     {"terms": {context_field: unique_ids}},
                 ],
             }
@@ -448,6 +470,8 @@ def query_bot_engine_logs(
 def lookup_client_ids(
     context_ids: list[str],
     time_minutes: int = 60,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> dict[str, str]:
     """
     For a list of context_ids, look up the corresponding client_id
@@ -491,7 +515,7 @@ def lookup_client_ids(
             "query": {
                 "bool": {
                     "filter": [
-                        {"range": {time_field: {"gte": f"now-{lookup_minutes}m", "lte": "now"}}},
+                        _time_range(time_field, lookup_minutes, time_from, time_to),
                         {"exists": {"field": "rawLog.data.event.client.id"}},
                     ],
                     "should": should_clauses,
@@ -580,6 +604,8 @@ def query_bot_engine_by_connection(
     connection_ids: list[str],
     time_minutes: int = 60,
     max_logs: int = 500,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Query bot engine logs by rawLog.data.data.metadata.connectionId
@@ -612,7 +638,7 @@ def query_bot_engine_by_connection(
         "query": {
             "bool": {
                 "filter": [
-                    {"range": {time_field: {"gte": f"now-{lookup_minutes}m", "lte": "now"}}},
+                    _time_range(time_field, lookup_minutes, time_from, time_to),
                     {"exists": {"field": "rawLog.data.error.code"}},
                 ],
                 "should": should_clauses,
@@ -679,6 +705,8 @@ def query_restart_logs(
     index: str | None = None,
     size: int = 50,
     search_term: str | None = None,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Query OpenSearch for log entries that indicate bot engine restarts (e.g. message contains "restart").
@@ -702,7 +730,7 @@ def query_restart_logs(
         "query": {
             "bool": {
                 "filter": [
-                    {"range": {time_field: {"gte": f"now-{time_minutes}m", "lte": "now"}}},
+                    _time_range(time_field, time_minutes, time_from, time_to),
                 ],
                 "must": [
                     {
@@ -786,11 +814,14 @@ def analyze_error_patterns(
     time_minutes: int = 15,
     tenant_filter: str | None = None,
     max_logs: int = 2000,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> dict[str, Any] | None:
     """Analyze error log patterns: stack traces, messages, k8s versions, cross-tenant."""
     result = query_all_error_logs(
         error_codes=error_codes, time_minutes=time_minutes,
         tenant_filter=tenant_filter, max_logs=max_logs,
+        time_from=time_from, time_to=time_to,
     )
     if not result:
         return None
@@ -858,13 +889,306 @@ def analyze_error_patterns(
             "tenants": sorted(tenants)[:5],
         })
 
+    # --- Root cause classification ---
+    root_causes = _classify_root_causes(logs, top_stacks, top_messages, k8s_counter, cross_tenant)
+
+    # --- Connection / correlation analysis ---
+    connections = _find_connections(logs, stack_counter, message_counter, k8s_counter, code_tenants)
+
     return {
         "total_analyzed": len(logs),
         "top_stacks": top_stacks,
         "top_messages": top_messages,
         "k8s_versions": k8s_versions,
         "cross_tenant": cross_tenant,
+        "root_causes": root_causes,
+        "connections": connections,
     }
+
+
+def _classify_root_causes(
+    logs: list[dict], top_stacks: list[dict], top_messages: list[dict],
+    k8s_counter: Any, cross_tenant: list[dict],
+) -> list[dict[str, Any]]:
+    """Classify errors into root cause categories with severity and recommendations."""
+    from collections import Counter, defaultdict
+    total = len(logs) or 1
+    causes: list[dict[str, Any]] = []
+
+    msg_lower_counter: Counter = Counter()
+    stack_lower_counter: Counter = Counter()
+    code_counter: Counter = Counter()
+    tenant_code_pair: dict[str, set] = defaultdict(set)
+
+    for log in logs:
+        msg = (log.get("message") or "").lower()
+        stack = (log.get("error_stack") or "").lower()
+        code = str(log.get("error_code", ""))
+        tenant = log.get("tenant_name") or ""
+        for kw in ["timeout", "parse", "action", "ssml", "tts", "speech",
+                    "websocket", "connection", "503", "502", "memory", "oom"]:
+            if kw in msg or kw in stack:
+                msg_lower_counter[kw] += 1
+        if code:
+            code_counter[code] += 1
+        if tenant and code:
+            tenant_code_pair[tenant].add(code)
+
+    # 1. Parser Timeout
+    timeout_count = msg_lower_counter.get("timeout", 0)
+    if timeout_count > 0:
+        pct = round(timeout_count * 100 / total, 1)
+        causes.append({
+            "category": "Parser Timeout",
+            "count": timeout_count,
+            "percentage": pct,
+            "severity": "Critical" if pct > 30 else "High" if pct > 10 else "Medium",
+            "description": "Bot engine's input parser is timing out while processing audio stream data. "
+                           "This typically happens when the bot engine is CPU-bound or the audio stream is delayed/fragmented.",
+            "recommendation": "Check bot engine pod CPU utilization during peak hours. "
+                              "Consider increasing parser timeout threshold or adding retry logic in the stream server.",
+        })
+
+    # 2. Bot Engine Action Errors
+    action_count = msg_lower_counter.get("action", 0)
+    if action_count > 0:
+        pct = round(action_count * 100 / total, 1)
+        causes.append({
+            "category": "Bot Engine Action Failure",
+            "count": action_count,
+            "percentage": pct,
+            "severity": "Critical" if pct > 30 else "High" if pct > 10 else "Medium",
+            "description": "Bot engine fails to execute actions during call processing. "
+                           "Often paired with parser timeouts, indicating the action handler catches timeout exceptions.",
+            "recommendation": "Investigate if action errors are a downstream effect of parser timeouts. "
+                              "Add structured error codes to distinguish timeout-triggered vs. logic-triggered action failures.",
+        })
+
+    # 3. Service Unavailable (503)
+    svc_count = code_counter.get("503", 0)
+    if svc_count > 0:
+        pct = round(svc_count * 100 / total, 1)
+        # Find which tenants have disproportionate 503s
+        t503_tenants = []
+        for t, codes in tenant_code_pair.items():
+            if "503" in codes:
+                t503_tenants.append(t)
+        causes.append({
+            "category": "Service Unavailable (503)",
+            "count": svc_count,
+            "percentage": pct,
+            "severity": "Critical" if pct > 15 else "High" if pct > 5 else "Medium",
+            "description": "Bot engine pods returning 503, indicating they are overloaded, restarting, or temporarily unavailable. "
+                           f"Affects {len(t503_tenants)} tenant(s). "
+                           "May indicate resource exhaustion (CPU/memory limits), OOMKill events, or deployment rollouts.",
+            "recommendation": "Check pod resource limits and actual usage. Look for OOMKilled events in kubectl describe pod. "
+                              "Consider scaling up affected pods or increasing resource limits.",
+        })
+
+    # 4. TTS/SSML Errors
+    tts_count = msg_lower_counter.get("tts", 0) + msg_lower_counter.get("ssml", 0) + msg_lower_counter.get("speech", 0)
+    tts_count = tts_count // 3 if tts_count > 0 else 0  # deduplicate triple-counting
+    actual_tts = sum(1 for l in logs if any(k in (l.get("message") or "").lower() for k in ("tts", "ssml", "speech")))
+    if actual_tts > 0:
+        pct = round(actual_tts * 100 / total, 1)
+        causes.append({
+            "category": "TTS / SSML Generation Failure",
+            "count": actual_tts,
+            "percentage": pct,
+            "severity": "High" if pct > 10 else "Medium" if pct > 3 else "Low",
+            "description": "Text-to-speech engine receives malformed SSML from the bot engine. "
+                           "Likely caused by unescaped special characters or invalid XML in bot response text.",
+            "recommendation": "Add SSML sanitization before passing text to the TTS engine. "
+                              "Check if specific bot flows generate edge-case text with special characters.",
+        })
+
+    # 5. WebSocket / Connection Errors
+    ws_count = msg_lower_counter.get("websocket", 0) + msg_lower_counter.get("connection", 0)
+    if ws_count > 0:
+        pct = round(ws_count * 100 / total, 1)
+        causes.append({
+            "category": "WebSocket / Connection Error",
+            "count": ws_count,
+            "percentage": pct,
+            "severity": "High" if pct > 10 else "Medium" if pct > 3 else "Low",
+            "description": "WebSocket connection between stream server and bot engine is dropping or failing. "
+                           "May indicate network instability, pod restarts, or connection pool exhaustion.",
+            "recommendation": "Check network stability between stream server and bot engine pods. "
+                              "Review WebSocket connection lifecycle and reconnection logic.",
+        })
+
+    # 6. Parse Errors (non-timeout)
+    parse_count = msg_lower_counter.get("parse", 0) - timeout_count
+    if parse_count > 0:
+        pct = round(parse_count * 100 / total, 1)
+        causes.append({
+            "category": "Input Parse Failure",
+            "count": parse_count,
+            "percentage": pct,
+            "severity": "Medium" if pct > 5 else "Low",
+            "description": "Bot engine cannot parse the input data from the stream server. "
+                           "This may indicate corrupted audio frames, encoding mismatches, or protocol changes.",
+            "recommendation": "Review input validation in the bot engine /stream/input endpoint. "
+                              "Check for audio encoding compatibility between stream server and bot engine.",
+        })
+
+    # 7. K8s version correlation
+    if k8s_counter:
+        total_k8s = sum(k8s_counter.values())
+        top_ver, top_count = k8s_counter.most_common(1)[0]
+        top_pct = round(top_count * 100 / total_k8s, 1) if total_k8s else 0
+        num_versions = len(k8s_counter)
+        if top_pct > 40 and num_versions > 2:
+            causes.append({
+                "category": "Version-Specific Concentration",
+                "count": top_count,
+                "percentage": top_pct,
+                "severity": "Medium",
+                "description": f"K8s version {top_ver} accounts for {top_pct}% of all errors across {num_versions} deployed versions. "
+                               "This disproportionate error rate may indicate a version-specific bug or that more tenants are deployed on this version.",
+                "recommendation": f"Compare error rates per-pod across versions. If {top_ver} has a higher per-pod error rate, "
+                                  "consider upgrading affected tenants to a newer version.",
+            })
+
+    causes.sort(key=lambda c: c["count"], reverse=True)
+    return causes
+
+
+def _find_connections(
+    logs: list[dict], stack_counter: Any, message_counter: Any,
+    k8s_counter: Any, code_tenants: dict[str, set],
+) -> list[dict[str, str]]:
+    """Find connections and correlations between error patterns."""
+    from collections import Counter, defaultdict
+    connections: list[dict[str, str]] = []
+    total = len(logs) or 1
+
+    # 1. Paired errors: same tenant + same timestamp = linked errors
+    ts_tenant_msgs: dict[str, list[str]] = defaultdict(list)
+    for log in logs:
+        ts = (log.get("timestamp") or "")[:23]  # millisecond precision
+        tenant = log.get("tenant_name") or "unknown"
+        msg = (log.get("message") or "")[:100]
+        if ts:
+            ts_tenant_msgs[f"{ts}|{tenant}"].append(msg)
+
+    paired_count = sum(1 for msgs in ts_tenant_msgs.values() if len(msgs) >= 2)
+    if paired_count > 0:
+        sample_pair = None
+        for key, msgs in ts_tenant_msgs.items():
+            if len(msgs) >= 2:
+                unique = list(set(msgs))
+                if len(unique) >= 2:
+                    sample_pair = unique[:2]
+                    break
+        desc = (f"{paired_count} error pairs detected at the same millisecond for the same tenant, "
+                "indicating these are the same failure logged twice from different code paths.")
+        if sample_pair:
+            desc += f' Example pair: "{sample_pair[0]}" + "{sample_pair[1]}".'
+        connections.append({
+            "type": "Paired Errors",
+            "description": desc,
+            "impact": f"Actual unique failures may be ~{total - paired_count} (not {total}), "
+                      "since each failure generates 2 log entries.",
+        })
+
+    # 2. Cross-code correlation: tenants with multiple error codes
+    multi_code_tenants = {t: codes for t, codes in code_tenants.items() if len(codes) > 1}
+    if multi_code_tenants:
+        all_have_same = True
+        common_codes = None
+        for t, codes in multi_code_tenants.items():
+            if common_codes is None:
+                common_codes = codes
+            elif codes != common_codes:
+                all_have_same = False
+                break
+        if all_have_same and common_codes and len(multi_code_tenants) >= 3:
+            connections.append({
+                "type": "Uniform Multi-Code Pattern",
+                "description": f"All {len(multi_code_tenants)} affected tenants show the exact same error code combination "
+                               f"({', '.join(sorted(common_codes))}). This uniformity confirms a platform-level issue, "
+                               "not tenant-specific configuration problems.",
+                "impact": "Fix should target the shared platform layer (stream server or bot engine core), "
+                          "not individual tenant configurations.",
+            })
+        elif len(multi_code_tenants) >= 2:
+            connections.append({
+                "type": "Multi-Code Tenants",
+                "description": f"{len(multi_code_tenants)} tenants have multiple error types (400+503), "
+                               "suggesting a compound failure: the primary error (400 timeout) may cascade "
+                               "into secondary errors (503 overload) under high load.",
+                "impact": "Fixing the primary 400 timeout issue may also reduce 503 errors.",
+            })
+
+    # 3. Time-based correlation: errors spike together
+    hourly: Counter = Counter()
+    hourly_by_code: dict[str, Counter] = defaultdict(Counter)
+    for log in logs:
+        ts = (log.get("timestamp") or "")[:13]
+        code = str(log.get("error_code", ""))
+        if ts:
+            hourly[ts] += 1
+            hourly_by_code[ts][code] += 1
+
+    if len(hourly) >= 3:
+        counts = sorted(hourly.values())
+        peak = counts[-1]
+        low = counts[0]
+        if peak > low * 3 and peak > 20:
+            peak_hour = max(hourly, key=hourly.get)
+            connections.append({
+                "type": "Traffic-Correlated Errors",
+                "description": f"Error rate varies {peak // max(low, 1)}x between peak ({peak} errors at {peak_hour}) "
+                               f"and low ({low} errors). Errors scale with call volume, confirming the issue "
+                               "is triggered per-call rather than being a background/batch process failure.",
+                "impact": "Error count will increase proportionally with traffic. "
+                          "The fix must handle per-call load, not just idle-state bugs.",
+            })
+
+    # 4. Version-error correlation
+    if k8s_counter and len(k8s_counter) >= 2:
+        ver_list = k8s_counter.most_common()
+        top_ver, top_count = ver_list[0]
+        bottom_ver, bottom_count = ver_list[-1]
+        if top_count > bottom_count * 5:
+            connections.append({
+                "type": "Version Disparity",
+                "description": f"Version {top_ver} has {top_count} errors vs {bottom_ver} with only {bottom_count}. "
+                               "This may indicate a version-specific bug, or simply that more tenants run on the higher-error version.",
+                "impact": "Investigate per-pod error rate for each version to determine if the version itself is problematic.",
+            })
+
+    # 5. 400 -> 503 cascade pattern
+    tenant_400: Counter = Counter()
+    tenant_503: Counter = Counter()
+    for log in logs:
+        code = str(log.get("error_code", ""))
+        tenant = log.get("tenant_name") or ""
+        if tenant:
+            if code == "400":
+                tenant_400[tenant] += 1
+            elif code == "503":
+                tenant_503[tenant] += 1
+    cascade_tenants = []
+    for t in tenant_503:
+        if t in tenant_400 and tenant_503[t] > 0:
+            ratio_503 = tenant_503[t] / (tenant_400[t] + tenant_503[t]) * 100
+            if ratio_503 > 20:
+                cascade_tenants.append((t, tenant_400[t], tenant_503[t], round(ratio_503, 1)))
+    if cascade_tenants:
+        cascade_tenants.sort(key=lambda x: x[3], reverse=True)
+        desc_parts = [f"{t} (400:{c4}, 503:{c5}, {r}% are 503)" for t, c4, c5, r in cascade_tenants[:3]]
+        connections.append({
+            "type": "400 to 503 Cascade",
+            "description": f"Some tenants show disproportionately high 503 rates alongside 400 errors: "
+                           + ", ".join(desc_parts) + ". "
+                           "When bot engine pods are overwhelmed by 400 errors, they may start returning 503 (Service Unavailable) "
+                           "as a secondary symptom of resource exhaustion.",
+            "impact": "These tenants may need higher pod resource limits or dedicated scaling rules.",
+        })
+
+    return connections
 
 
 def check_opensearch_connection() -> bool:
