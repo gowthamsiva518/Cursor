@@ -206,8 +206,8 @@ def _extract_calls(
         if is_failed or error_code:
             failed += 1
 
-        call_from = c.from_formatted or c.from_ or ""
-        call_to = c.to_formatted or c.to or ""
+        call_from = getattr(c, "from_formatted", None) or getattr(c, "from_", None) or ""
+        call_to = getattr(c, "to_formatted", None) or getattr(c, "to", None) or ""
 
         for num in [call_from, call_to]:
             if num:
@@ -216,27 +216,56 @@ def _extract_calls(
                 if is_failed or error_code:
                     stats["errors"] += 1
 
+        ist = timezone(timedelta(hours=5, minutes=30))
+
         start_time = ""
         if c.start_time:
-            ist = timezone(timedelta(hours=5, minutes=30))
             if hasattr(c.start_time, "astimezone"):
                 start_time = c.start_time.astimezone(ist).strftime("%Y-%m-%d %H:%M:%S IST")
             else:
                 start_time = str(c.start_time)
 
+        end_time = ""
+        if hasattr(c, "end_time") and c.end_time:
+            if hasattr(c.end_time, "astimezone"):
+                end_time = c.end_time.astimezone(ist).strftime("%Y-%m-%d %H:%M:%S IST")
+            else:
+                end_time = str(c.end_time)
+
+        dur_sec = int(c.duration) if c.duration else 0
+        if dur_sec >= 60:
+            duration_fmt = f"{dur_sec // 60} min {dur_sec % 60} sec"
+        else:
+            duration_fmt = f"{dur_sec} sec"
+
+        price = ""
+        if hasattr(c, "price") and c.price:
+            currency = getattr(c, "price_unit", "USD") or "USD"
+            price = f"{c.price} {currency}"
+
         acct_sid = c.account_sid if hasattr(c, "account_sid") else ""
         namespace = ns_map.get(acct_sid, "")
 
+        from_raw = getattr(c, "_from", None) or getattr(c, "from_", None) or call_from
+        to_raw = getattr(c, "to", None) or call_to
+
         calls.append({
             "sid": c.sid,
+            "account_sid": acct_sid,
             "account": account_name,
             "namespace": namespace,
             "from": call_from,
+            "from_raw": from_raw,
             "to": call_to,
+            "to_raw": to_raw,
             "status": status,
             "direction": c.direction or "",
-            "duration": int(c.duration) if c.duration else 0,
+            "duration": dur_sec,
+            "duration_fmt": duration_fmt,
             "start_time": start_time,
+            "end_time": end_time,
+            "price": price,
+            "caller_name": getattr(c, "caller_name", "") or "",
             "error_code": error_code,
             "error_message": error_message,
         })

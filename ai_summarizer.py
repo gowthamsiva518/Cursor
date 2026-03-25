@@ -1,13 +1,13 @@
 """
-AI-powered RCA summarizer using OpenAI GPT-4o-mini.
+AI-powered RCA summarizer using Anthropic Claude.
 
 Takes the raw RCA dict produced by generate_rca() and returns a concise,
 executive-style summary covering Impact, Root Cause, Evidence, and
 Recommendations.
 
 Configure via environment:
-  OPENAI_API_KEY  - OpenAI API key (required)
-  OPENAI_MODEL    - Model to use (default: gpt-4o-mini)
+  ANTHROPIC_API_KEY  - Anthropic API key (required)
+  ANTHROPIC_MODEL    - Model to use (default: claude-sonnet-4-20250514)
 """
 
 from __future__ import annotations
@@ -19,19 +19,19 @@ from typing import Any
 
 def summarize_rca(rca_data: dict[str, Any]) -> str | None:
     """
-    Send RCA data to OpenAI and return a formatted executive summary.
-    Returns None if OpenAI is not configured or the call fails.
+    Send RCA data to Claude and return a formatted executive summary.
+    Returns None if Anthropic is not configured or the call fails.
     """
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         return None
 
     try:
-        from openai import OpenAI
+        import anthropic
     except ImportError:
         return None
 
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip()
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514").strip()
 
     prompt_data = _build_prompt_data(rca_data)
 
@@ -63,17 +63,15 @@ def summarize_rca(rca_data: dict[str, Any]) -> str | None:
     )
 
     try:
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt_data},
-            ],
+            system=system_prompt,
+            messages=[{"role": "user", "content": prompt_data}],
             temperature=0.3,
             max_tokens=1200,
         )
-        return response.choices[0].message.content.strip()
+        return response.content[0].text.strip()
     except Exception:
         return None
 

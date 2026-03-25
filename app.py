@@ -18,6 +18,9 @@ try:
 except ImportError:
     pass
 
+import os
+import re
+
 from flask import Flask, Response, jsonify, render_template, request
 
 # Project root = folder containing app.py (so templates/ and stream_server_alerts.yaml are found)
@@ -25,6 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = PROJECT_ROOT / "stream_server_alerts.yaml"
 
 app = Flask(__name__, template_folder=str(PROJECT_ROOT / "templates"))
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 # Fail fast if config or templates are missing
 if not CONFIG_PATH.exists():
@@ -37,7 +41,9 @@ from agent import AlertAgent
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    resp = app.make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 def _apply_time_minutes(ctx: dict, data: dict) -> None:
@@ -105,6 +111,128 @@ def api_twilio_status():
         return jsonify({"ok": result.get("connected", False), **result})
     except Exception as e:
         return jsonify({"ok": False, "connected": False, "error": str(e)})
+
+
+def _phone_digits(phone: str) -> str:
+    """Normalize a phone string to its core digits (strip non-digits and leading country-code 1)."""
+    d = re.sub(r"\D", "", phone)
+    if len(d) == 11 and d.startswith("1"):
+        d = d[1:]
+    return d
+
+
+@app.route("/api/twilio/logs", methods=["POST"])
+def api_twilio_logs():
+    """Fetch Twilio call logs filtered by From number."""
+    from twilio_client import query_call_logs
+
+    data = request.get_json() or {}
+    from_number = (data.get("from_number") or "").strip()
+    if not from_number:
+        return jsonify({"ok": False, "error": "from_number is required"}), 400
+
+    time_minutes = 60
+    try:
+        time_minutes = max(1, min(43200, int(data.get("time_minutes", 60))))
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        result = query_call_logs(time_minutes=time_minutes)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    if result.get("error"):
+        return jsonify({"ok": False, "error": result["error"]}), 500
+
+    needle = _phone_digits(from_number)
+    all_calls = result.get("calls", [])
+    filtered = [c for c in all_calls if needle and needle in _phone_digits(c.get("from", ""))]
+    failed = sum(1 for c in filtered if c.get("error_code"))
+
+    return jsonify({
+        "ok": True,
+        "total": len(filtered),
+        "failed_calls": failed,
+        "calls": filtered,
+        "accounts_checked": result.get("accounts_checked", []),
+    })
+
+
+@app.route("/api/download/twilio-logs", methods=["POST"])
+def api_download_twilio_logs():
+    """Download Twilio call logs filtered by From number as CSV or JSON."""
+    import csv
+    import io
+    import json as json_mod
+    from twilio_client import query_call_logs
+
+    data = request.get_json() or {}
+    from_number = (data.get("from_number") or "").strip()
+    if not from_number:
+        return jsonify({"ok": False, "error": "from_number is required"}), 400
+
+    time_minutes = 60
+    try:
+        time_minutes = max(1, min(43200, int(data.get("time_minutes", 60))))
+    except (TypeError, ValueError):
+        pass
+
+    fmt = (data.get("format") or "csv").strip().lower()
+
+    try:
+        result = query_call_logs(time_minutes=time_minutes)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    if result.get("error"):
+        return jsonify({"ok": False, "error": result["error"]}), 500
+
+    needle = _phone_digits(from_number)
+    all_calls = result.get("calls", [])
+    filtered = [c for c in all_calls if needle and needle in _phone_digits(c.get("from", ""))]
+    safe_name = re.sub(r"[^\w\-]", "", from_number)
+    base_name = f"twilio_logs_{safe_name}_{len(filtered)}_rows"
+
+    if fmt == "json":
+        content = json_mod.dumps(filtered, indent=2, default=str)
+        return Response(
+            content,
+            mimetype="application/json",
+            headers={"Content-Disposition": f"attachment; filename={base_name}.json"},
+        )
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "call_sid", "start_time", "end_time", "account", "namespace",
+        "from", "to", "direction", "status", "duration", "duration_fmt",
+        "price", "caller_name", "error_code", "error_message",
+    ])
+    for c in filtered:
+        writer.writerow([
+            c.get("sid", ""),
+            c.get("start_time", ""),
+            c.get("end_time", ""),
+            c.get("account", ""),
+            c.get("namespace", ""),
+            c.get("from_raw", c.get("from", "")),
+            c.get("to_raw", c.get("to", "")),
+            c.get("direction", ""),
+            c.get("status", ""),
+            c.get("duration", ""),
+            c.get("duration_fmt", ""),
+            c.get("price", ""),
+            c.get("caller_name", ""),
+            c.get("error_code", ""),
+            str(c.get("error_message", "")).replace("\n", " ").replace("\r", ""),
+        ])
+
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={base_name}.csv"},
+    )
 
 
 @app.route("/api/tenants")
@@ -261,6 +389,202 @@ def api_slack_command():
         "response_type": "ephemeral",
         "text": f"Running RCA analysis (error codes: {codes_str}, time window: {time_minutes}m)... Results will be posted shortly.",
     })
+
+
+@app.route("/api/bot-engine/status")
+def api_bot_engine_status():
+    """Check if the bot engine OpenSearch index is configured and reachable."""
+    try:
+        from opensearch_client import check_bot_engine_index
+        result = check_bot_engine_index()
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        return jsonify({"ok": False, "configured": False, "connected": False, "error": str(e)})
+
+
+@app.route("/api/bot-engine/logs", methods=["POST"])
+def api_bot_engine_logs():
+    """Fetch bot engine logs by connectionId."""
+    from opensearch_client import query_bot_engine_default_logs
+
+    data = request.get_json() or {}
+    connection_id = (data.get("connection_id") or "").strip()
+    if not connection_id:
+        return jsonify({"ok": False, "error": "connection_id is required"}), 400
+
+    time_minutes = 0
+    try:
+        time_minutes = max(0, int(data.get("time_minutes", 0)))
+    except (TypeError, ValueError):
+        pass
+
+    max_logs = min(int(data.get("max_logs", 500)), 10000)
+
+    result = query_bot_engine_default_logs(
+        connection_id=connection_id,
+        time_minutes=time_minutes if time_minutes > 0 else None,
+        max_logs=max_logs,
+    )
+    if result is None:
+        return jsonify({"ok": False, "error": "Bot engine index not configured (set OPENSEARCH_BOT_ENGINE_INDEX in .env)"}), 400
+    if result.get("error"):
+        return jsonify({"ok": False, **result}), 500
+
+    ui_logs = [{k: v for k, v in log.items() if k != "_raw"} for log in result.get("logs", [])]
+    return jsonify({"ok": True, "total": result.get("total", 0), "scanned": result.get("scanned", 0), "logs": ui_logs})
+
+
+@app.route("/api/download/bot-engine-logs", methods=["POST"])
+def api_download_bot_engine_logs():
+    """Download bot engine logs by connectionId as CSV or JSON."""
+    import csv
+    import io
+    import json as json_mod
+    from opensearch_client import query_bot_engine_default_logs
+
+    data = request.get_json() or {}
+    connection_id = (data.get("connection_id") or "").strip()
+    if not connection_id:
+        return jsonify({"ok": False, "error": "connection_id is required"}), 400
+
+    time_minutes = 0
+    try:
+        time_minutes = max(0, int(data.get("time_minutes", 0)))
+    except (TypeError, ValueError):
+        pass
+
+    max_logs = min(int(data.get("max_logs", 10000)), 10000)
+    fmt = (data.get("format") or "csv").strip().lower()
+
+    result = query_bot_engine_default_logs(
+        connection_id=connection_id,
+        time_minutes=time_minutes if time_minutes > 0 else None,
+        max_logs=max_logs,
+    )
+    if result is None:
+        return jsonify({"ok": False, "error": "Bot engine index not configured"}), 400
+    if result.get("error"):
+        return jsonify({"ok": False, "error": result["error"]}), 500
+
+    logs = result.get("logs", [])
+    base_name = f"bot_engine_logs_{connection_id}_{len(logs)}_rows"
+
+    if fmt == "json":
+        raw_docs = [log.get("_raw") or log for log in logs]
+        content = json_mod.dumps(raw_docs, indent=2, default=str)
+        return Response(
+            content,
+            mimetype="application/json",
+            headers={"Content-Disposition": f"attachment; filename={base_name}.json"},
+        )
+
+    # "table" / CSV format — flat extracted fields
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "timestamp", "level", "tenant_name", "connection_id",
+        "api_name", "method_name", "error_code", "message", "error_message", "error_stack",
+    ])
+    for log in logs:
+        writer.writerow([
+            log.get("timestamp", ""),
+            log.get("level", ""),
+            log.get("tenant_name", ""),
+            log.get("connection_id", ""),
+            log.get("api_name", ""),
+            log.get("method_name", ""),
+            log.get("error_code", ""),
+            str(log.get("message", "")).replace("\n", " ").replace("\r", ""),
+            str(log.get("error_message", "")).replace("\n", " ").replace("\r", ""),
+            str(log.get("error_stack", "")).replace("\n", " ").replace("\r", ""),
+        ])
+
+    csv_content = buf.getvalue()
+    return Response(
+        csv_content,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={base_name}.csv"},
+    )
+
+
+@app.route("/api/bot-engine/analyse", methods=["POST"])
+def api_bot_engine_analyse():
+    """Analyse bot engine logs using Claude and return a summary of issues."""
+    data = request.get_json() or {}
+    logs = data.get("logs")
+    if not logs or not isinstance(logs, list):
+        return jsonify({"ok": False, "error": "logs array is required"}), 400
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "ANTHROPIC_API_KEY not configured. Add it to .env"}), 400
+
+    try:
+        import anthropic
+    except ImportError:
+        return jsonify({"ok": False, "error": "anthropic package not installed (pip install anthropic)"}), 500
+
+    log_lines = []
+    for i, log in enumerate(logs[:200], 1):
+        parts = [f"[{i}]", log.get("timestamp", "")]
+        if log.get("level"):
+            parts.append(f"level={log['level']}")
+        if log.get("api_name"):
+            parts.append(f"api={log['api_name']}")
+        if log.get("method_name"):
+            parts.append(f"method={log['method_name']}")
+        if log.get("error_code"):
+            parts.append(f"error_code={log['error_code']}")
+        if log.get("error_message"):
+            parts.append(f"error_msg={log['error_message']}")
+        if log.get("message"):
+            parts.append(f"msg={log['message']}")
+        log_lines.append(" | ".join(parts))
+
+    prompt_data = (
+        f"Connection ID: {logs[0].get('connection_id', 'unknown')}\n"
+        f"Tenant: {logs[0].get('tenant_name', 'unknown')}\n"
+        f"Total logs: {len(logs)}\n"
+        f"Time range: {logs[0].get('timestamp', '?')} to {logs[-1].get('timestamp', '?')}\n\n"
+        "=== LOG ENTRIES ===\n" + "\n".join(log_lines)
+    )
+
+    system_prompt = (
+        "You are a senior Bot Engine engineer analysing a sequence of log entries "
+        "for a single customer connection (voice/chat session). Your job is to determine "
+        "if the session completed successfully or if something went wrong.\n\n"
+        "Analyse the log entries and produce a clear report with these sections:\n\n"
+        "**Session Overview**: Summarise the session — tenant, connection ID, how many API calls, "
+        "time span, and the overall flow (e.g. session create -> auth -> account lookup -> transfer).\n\n"
+        "**Issues Found**: List any errors, failures, or anomalies. For each issue, state:\n"
+        "  - Which API call / log entry it occurred in\n"
+        "  - The error code and message\n"
+        "  - The likely impact on the customer experience\n"
+        "If no issues are found, say 'No issues detected — session completed successfully.'\n\n"
+        "**Flow Analysis**: Was the API call sequence logical and complete? "
+        "Were there unexpected repeated calls, missing steps, or unusual timing gaps?\n\n"
+        "**Verdict**: One sentence — did this session succeed or fail, and why?\n\n"
+        "Rules:\n"
+        "- Use the exact timestamps, API names, error codes, and messages from the logs.\n"
+        "- Keep each section to 2-4 sentences.\n"
+        "- Do NOT use markdown headers (##). Use **Bold** labels only.\n"
+        "- Do NOT add disclaimers about being an AI."
+    )
+
+    try:
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514").strip()
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model,
+            system=system_prompt,
+            messages=[{"role": "user", "content": prompt_data}],
+            temperature=0.3,
+            max_tokens=1500,
+        )
+        analysis = response.content[0].text.strip()
+        return jsonify({"ok": True, "analysis": analysis})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/api/download/error-logs", methods=["POST"])

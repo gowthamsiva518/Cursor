@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Stream Server Alerts</title>
+  <title>Gowtham Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -227,12 +227,112 @@
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
     #result.visible { animation: fadeIn 0.3s ease-out; }
     .agent-actions { animation: fadeIn 0.25s ease-out; }
+
+    /* Home page tiles */
+    .home-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+    }
+    .home-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem 1.5rem;
+      cursor: pointer;
+      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+      box-shadow: var(--shadow);
+      text-align: left;
+    }
+    .home-tile:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent);
+      box-shadow: 0 8px 32px rgba(99,102,241,0.18);
+    }
+    .home-tile .tile-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .home-tile h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 0.5rem 0;
+    }
+    .home-tile p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.5;
+    }
+
+    /* Back button */
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.4rem 0.9rem;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 1.25rem;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .back-btn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--surface-2);
+    }
+    .back-btn svg { width: 16px; height: 16px; }
+
+    /* View containers */
+    .view-section { animation: fadeIn 0.3s ease-out; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Stream Server Alerts</h1>
-    <p class="sub">Run the alert engine &mdash; analyse errors, pod restarts, Twilio calls, and generate RCA.</p>
+    <h1>Gowtham Assistant</h1>
+    <p class="sub">Select a tool to get started.</p>
+
+    <!-- Home Page -->
+    <div id="homePage">
+      <div class="home-grid">
+        <div class="home-tile" onclick="showView('streamServerView')">
+          <div class="tile-icon" style="background:linear-gradient(135deg,var(--accent),var(--accent-dim));">&#9889;</div>
+          <h3>Stream Server Alerts</h3>
+          <p>Analyse errors, pod restarts, Twilio calls, and generate Root Cause Analysis.</p>
+        </div>
+        <div class="home-tile" onclick="showView('botEngineView')">
+          <div class="tile-icon" style="background:linear-gradient(135deg,var(--cyan),var(--teal));">&#128269;</div>
+          <h3>Bot Engine Default Logs</h3>
+          <p>Look up bot engine logs by Connection ID from OpenSearch.</p>
+        </div>
+        <div class="home-tile" onclick="showView('twilioView')">
+          <div class="tile-icon" style="background:linear-gradient(135deg,var(--rose),var(--orange));">&#128222;</div>
+          <h3>Twilio Log Analysis</h3>
+          <p>Search Twilio call logs by From number across all subaccounts.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stream Server Alerts View -->
+    <div id="streamServerView" class="view-section" style="display:none;">
+      <button type="button" class="back-btn" onclick="showView('homePage')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        Home
+      </button>
 
     <div class="card">
       <h2>Input</h2>
@@ -383,9 +483,179 @@
         <ul id="agentActionsList"></ul>
       </div>
     </div>
+
+    </div><!-- /streamServerView -->
+
+    <!-- Bot Engine Default Logs View -->
+    <div id="botEngineView" class="view-section" style="display:none;">
+      <button type="button" class="back-btn" onclick="showView('homePage')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        Home
+      </button>
+
+    <div class="card" id="botEngineCard">
+      <h2>Bot Engine Default Logs</h2>
+      <div id="botEngineStatus" style="margin-bottom: 1rem;">
+        <span class="hint">Checking bot engine index...</span>
+      </div>
+      <div>
+        <label for="beConnectionId">Connection ID <span style="color:var(--rose);font-size:0.8rem;">*required</span></label>
+        <input type="text" id="beConnectionId" placeholder="Enter rawLog.data.data.metadata.connectionId" style="font-size:0.88rem;">
+
+        <label for="beTimeFilter" style="margin-top: 1rem;">Time window</label>
+        <select id="beTimeFilter" style="width: 100%;">
+          <option value="0" selected>All time (auto-detect from Connection ID)</option>
+          <optgroup label="Manual range">
+            <option value="15">Last 15 minutes</option>
+            <option value="30">Last 30 minutes</option>
+            <option value="60">Last 1 hour</option>
+            <option value="180">Last 3 hours</option>
+            <option value="360">Last 6 hours</option>
+            <option value="720">Last 12 hours</option>
+            <option value="1440">Last 24 hours</option>
+            <option value="2880">Last 2 days</option>
+            <option value="7200">Last 5 days</option>
+            <option value="10080">Last 7 days</option>
+            <option value="20160">Last 14 days</option>
+            <option value="43200">Last 30 days</option>
+          </optgroup>
+        </select>
+
+        <div style="display: flex; gap: 0.6rem; margin-top: 1.25rem;">
+          <button type="button" class="btn" id="beFetchBtn">Fetch Logs</button>
+          <button type="button" class="btn" id="beDownloadBtn" style="display:none;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;">Download Table</button>
+          <button type="button" class="btn" id="beDownloadJsonBtn" style="display:none;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;">Download JSON</button>
+          <button type="button" class="btn" id="beAnalyseBtn" style="display:none;background:linear-gradient(135deg,var(--violet),var(--accent));color:#fff;border:none;font-weight:600;">Analyse Logs</button>
+        </div>
+        <p class="err" id="beApiErr" style="display: none;"></p>
+      </div>
+
+      <div id="botEngineResult" style="display: none; margin-top: 1.25rem;">
+        <div style="display:flex;gap:1rem;margin-bottom:1rem;">
+          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
+            <div style="font-size:1.5rem;font-weight:700;color:var(--cyan);" id="beTotalCount">0</div>
+            <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Matched Logs</div>
+          </div>
+          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
+            <div style="font-size:1.5rem;font-weight:700;color:var(--muted);" id="beScannedCount">0</div>
+            <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Docs Scanned</div>
+          </div>
+        </div>
+
+        <div class="agent-actions" id="beLogsSection" style="border-left-color: var(--sky);">
+          <h3 style="color: var(--sky);">Log entries <span id="beLogCount" style="font-weight:400;font-size:0.78rem;color:var(--muted);text-transform:none;letter-spacing:0;"></span></h3>
+          <div style="max-height:600px;overflow:auto;">
+            <table class="client-table" id="beLogsTable">
+              <thead><tr><th>Timestamp</th><th>Level</th><th>Tenant</th><th>API</th><th>Method</th><th>Error</th><th style="min-width:250px;">Message</th></tr></thead>
+              <tbody id="beLogsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="beAnalysisResult" style="display:none; margin-top:1.25rem; padding:1.1rem 1.3rem; background:linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(34,211,238,0.05) 50%, rgba(192,132,252,0.05) 100%); border:1px solid rgba(99,102,241,0.2); border-radius:12px; line-height:1.7; box-shadow:0 4px 20px rgba(99,102,241,0.08); animation: fadeIn 0.3s ease-out;">
+          <h4 style="margin:0 0 0.6rem 0; font-size:1rem; display:flex; align-items:center; gap:0.5rem;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--violet));font-size:0.9rem;">&#9889;</span>
+            <span style="background:linear-gradient(135deg, var(--accent-light), var(--violet)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; font-weight:600;">AI Log Analysis</span>
+          </h4>
+          <div id="beAnalysisBody" style="font-size:0.9rem; line-height:1.65;"></div>
+        </div>
+      </div>
+    </div>
+    </div><!-- /botEngineView -->
+
+    <!-- Twilio Log Analysis View -->
+    <div id="twilioView" class="view-section" style="display:none;">
+      <button type="button" class="back-btn" onclick="showView('homePage')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        Home
+      </button>
+
+    <div class="card" id="twilioCard">
+      <h2>Twilio Log Analysis</h2>
+      <div id="twilioStatus" style="margin-bottom: 1rem;">
+        <span class="hint">Checking Twilio connection...</span>
+      </div>
+      <div>
+        <label for="twFromNumber">From number <span style="color:var(--rose);font-size:0.8rem;">*required</span></label>
+        <input type="text" id="twFromNumber" placeholder="e.g. +14155551234" style="font-size:0.88rem;">
+
+        <label for="twTimeFilter" style="margin-top: 1rem;">Time window</label>
+        <select id="twTimeFilter" style="width: 100%;">
+          <optgroup label="Common (Discover presets)">
+            <option value="15">Last 15 minutes</option>
+            <option value="30">Last 30 minutes</option>
+            <option value="60" selected>Last 1 hour</option>
+            <option value="180">Last 3 hours</option>
+            <option value="360">Last 6 hours</option>
+            <option value="720">Last 12 hours</option>
+            <option value="1440">Last 24 hours</option>
+            <option value="2880">Last 2 days</option>
+            <option value="7200">Last 5 days</option>
+            <option value="10080">Last 7 days</option>
+            <option value="20160">Last 14 days</option>
+            <option value="43200">Last 30 days</option>
+          </optgroup>
+        </select>
+
+        <div style="display: flex; gap: 0.6rem; margin-top: 1.25rem;">
+          <button type="button" class="btn" id="twFetchBtn">Fetch Logs</button>
+          <button type="button" class="btn" id="twDownloadBtn" style="display:none;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;">Download Table</button>
+          <button type="button" class="btn" id="twDownloadJsonBtn" style="display:none;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;">Download JSON</button>
+        </div>
+        <p class="err" id="twApiErr" style="display: none;"></p>
+      </div>
+
+      <div id="twilioResult" style="display: none; margin-top: 1.25rem;">
+        <div style="display:flex;gap:1rem;margin-bottom:1rem;">
+          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
+            <div style="font-size:1.5rem;font-weight:700;color:var(--cyan);" id="twTotalCount">0</div>
+            <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Total Calls</div>
+          </div>
+          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
+            <div style="font-size:1.5rem;font-weight:700;color:var(--rose);" id="twFailedCount">0</div>
+            <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Failed Calls</div>
+          </div>
+        </div>
+
+        <div class="agent-actions" id="twLogsSection" style="border-left-color: var(--rose);">
+          <h3 style="color: var(--rose);">Call logs <span id="twLogCount" style="font-weight:400;font-size:0.78rem;color:var(--muted);text-transform:none;letter-spacing:0;"></span></h3>
+          <div style="max-height:700px;overflow:auto;">
+            <table class="client-table" id="twLogsTable">
+              <thead><tr><th>Call SID</th><th>Date</th><th>From</th><th>To</th><th>Direction</th><th>Status</th><th>Duration</th><th>Price</th><th>Account</th><th>Error</th></tr></thead>
+              <tbody id="twLogsBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="twCallDetail" style="display:none;margin-top:1.25rem;"></div>
+      </div>
+    </div>
+    </div><!-- /twilioView -->
   </div>
 
   <script>
+    // --- View router ---
+    function showView(viewId) {
+      var views = ['homePage', 'streamServerView', 'botEngineView', 'twilioView'];
+      for (var i = 0; i < views.length; i++) {
+        var el = document.getElementById(views[i]);
+        if (el) el.style.display = views[i] === viewId ? '' : 'none';
+      }
+      var hashMap = { streamServerView: '#stream-server', botEngineView: '#bot-engine', twilioView: '#twilio' };
+      if (hashMap[viewId]) {
+        history.replaceState(null, '', hashMap[viewId]);
+      } else {
+        history.replaceState(null, '', window.location.pathname);
+      }
+      window.scrollTo(0, 0);
+    }
+
+    (function initRouter() {
+      var hash = window.location.hash;
+      if (hash === '#stream-server') showView('streamServerView');
+      else if (hash === '#bot-engine') showView('botEngineView');
+      else if (hash === '#twilio') showView('twilioView');
+    })();
+
     const errorCodesEl = document.getElementById('errorCodes');
     const runBtn = document.getElementById('run');
     const apiErr = document.getElementById('apiErr');
@@ -979,6 +1249,377 @@
       };
       downloadFile(JSON.stringify(payload, null, 2), 'rca_report.json', 'application/json');
     });
+
+    // --- Bot Engine Default Logs sub-agent ---
+    (function() {
+      var beStatusEl = document.getElementById('botEngineStatus');
+      var beFetchBtn = document.getElementById('beFetchBtn');
+      var beDownloadBtn = document.getElementById('beDownloadBtn');
+      var beDownloadJsonBtn = document.getElementById('beDownloadJsonBtn');
+      var beAnalyseBtn = document.getElementById('beAnalyseBtn');
+      var beAnalysisResult = document.getElementById('beAnalysisResult');
+      var beAnalysisBody = document.getElementById('beAnalysisBody');
+      var beApiErr = document.getElementById('beApiErr');
+      var beResultEl = document.getElementById('botEngineResult');
+      var beConnInput = document.getElementById('beConnectionId');
+      var beTimeSelect = document.getElementById('beTimeFilter');
+      var lastPayload = null;
+      var lastLogs = null;
+
+      fetch('/api/bot-engine/status').then(function(r) { return r.json(); }).then(function(d) {
+        if (d.configured && d.connected) {
+          beStatusEl.innerHTML = '<span style="color:var(--success);font-weight:600;">&#9679;</span> <span style="color:var(--text);font-size:0.9rem;">Connected to <code style="background:var(--surface-2);padding:0.15rem 0.5rem;border-radius:4px;font-size:0.82rem;">' + (d.index || 'bot-engine') + '</code></span>'
+            + (d.doc_count !== undefined ? ' <span style="color:var(--muted);font-size:0.82rem;">(' + Number(d.doc_count).toLocaleString() + ' docs)</span>' : '');
+        } else if (d.configured) {
+          beStatusEl.innerHTML = '<span style="color:var(--amber);font-weight:600;">&#9679;</span> <span style="color:var(--muted);font-size:0.9rem;">Configured but not reachable: ' + (d.error || d.message || '') + '</span>';
+        } else {
+          beStatusEl.innerHTML = '<span style="color:var(--muted);font-weight:600;">&#9679;</span> <span style="color:var(--muted);font-size:0.9rem;">' + (d.message || 'Set OPENSEARCH_BOT_ENGINE_INDEX in .env') + '</span>';
+        }
+      }).catch(function() {
+        beStatusEl.innerHTML = '<span style="color:var(--danger);">Could not check bot engine status.</span>';
+      });
+
+      function getLevelColor(level) {
+        var l = Number(level);
+        if (l >= 50) return '#ef4444';
+        if (l >= 40) return '#eab308';
+        if (l >= 30) return '#22d3ee';
+        return '#94a3b8';
+      }
+
+      beFetchBtn.addEventListener('click', function() {
+        var cid = beConnInput.value.trim();
+        beApiErr.style.display = 'none';
+        beResultEl.style.display = 'none';
+        beDownloadBtn.style.display = 'none';
+        beDownloadJsonBtn.style.display = 'none';
+        beAnalyseBtn.style.display = 'none';
+        beAnalysisResult.style.display = 'none';
+
+        if (!cid) {
+          beApiErr.textContent = 'Please enter a Connection ID';
+          beApiErr.style.display = 'block';
+          return;
+        }
+
+        beFetchBtn.disabled = true;
+        beFetchBtn.textContent = 'Fetching...';
+
+        var payload = {
+          connection_id: cid,
+          time_minutes: parseInt(beTimeSelect.value, 10) || 1440,
+          max_logs: 500
+        };
+        lastPayload = payload;
+
+        fetch('/api/bot-engine/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        .then(function(res) { return res.json().then(function(d) { return { status: res.status, data: d }; }); })
+        .then(function(r) {
+          if (!r.data.ok) {
+            beApiErr.textContent = r.data.error || ('HTTP ' + r.status);
+            beApiErr.style.display = 'block';
+            return;
+          }
+          var data = r.data;
+          var logs = data.logs || [];
+
+          document.getElementById('beTotalCount').textContent = Number(data.total || 0).toLocaleString();
+          document.getElementById('beScannedCount').textContent = Number(data.scanned || 0).toLocaleString();
+          document.getElementById('beLogCount').textContent = '(showing ' + logs.length + ' of ' + Number(data.total || 0).toLocaleString() + ')';
+
+          var tbody = document.getElementById('beLogsBody');
+          tbody.innerHTML = logs.map(function(l) {
+            var lc = getLevelColor(l.level);
+            var errCode = l.error_code ? '<span style="color:#ef4444;font-weight:600;">' + l.error_code + '</span>' : '-';
+            var errMsg = l.error_message || '';
+            var msg = l.message || '';
+            var displayMsg = errMsg ? errMsg : msg;
+            return '<tr>'
+              + '<td style="font-size:0.78rem;white-space:nowrap;">' + (l.timestamp || '-') + '</td>'
+              + '<td style="color:' + lc + ';font-weight:600;">' + (l.level || '-') + '</td>'
+              + '<td>' + (l.tenant_name || '-') + '</td>'
+              + '<td style="font-size:0.8rem;">' + (l.api_name || '-') + '</td>'
+              + '<td style="font-size:0.8rem;">' + (l.method_name || '-') + '</td>'
+              + '<td>' + errCode + '</td>'
+              + '<td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.82rem;">' + (displayMsg || '-') + '</td>'
+              + '</tr>';
+          }).join('');
+
+          lastLogs = logs;
+          beResultEl.style.display = 'block';
+          beDownloadBtn.style.display = '';
+          beDownloadJsonBtn.style.display = '';
+          beAnalyseBtn.style.display = logs.length > 0 ? '' : 'none';
+        })
+        .catch(function(e) {
+          beApiErr.textContent = 'Error: ' + (e.message || e);
+          beApiErr.style.display = 'block';
+        })
+        .finally(function() {
+          beFetchBtn.disabled = false;
+          beFetchBtn.textContent = 'Fetch Logs';
+        });
+      });
+
+      function beDownloadAs(format) {
+        var btn = format === 'json' ? beDownloadJsonBtn : beDownloadBtn;
+        var label = format === 'json' ? 'Download JSON' : 'Download Table';
+        var fallback = format === 'json' ? 'bot_engine_logs.json' : 'bot_engine_logs.csv';
+        if (!lastPayload) return;
+        btn.disabled = true;
+        btn.textContent = 'Downloading...';
+
+        fetch('/api/download/bot-engine-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connection_id: lastPayload.connection_id, time_minutes: lastPayload.time_minutes, max_logs: 10000, format: format })
+        })
+        .then(function(resp) {
+          if (!resp.ok) return resp.json().then(function(e) { throw new Error(e.error || resp.statusText); });
+          return resp.blob().then(function(blob) {
+            var disp = resp.headers.get('Content-Disposition') || '';
+            var m = disp.match(/filename=(.+)/);
+            var fname = m ? m[1] : fallback;
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url; a.download = fname; a.click();
+            URL.revokeObjectURL(url);
+          });
+        })
+        .catch(function(e) { alert('Download error: ' + e.message); })
+        .finally(function() {
+          btn.disabled = false;
+          btn.textContent = label;
+        });
+      }
+
+      beDownloadBtn.addEventListener('click', function() { beDownloadAs('csv'); });
+      beDownloadJsonBtn.addEventListener('click', function() { beDownloadAs('json'); });
+
+      beAnalyseBtn.addEventListener('click', function() {
+        if (!lastLogs || lastLogs.length === 0) return;
+        beAnalyseBtn.disabled = true;
+        beAnalyseBtn.textContent = 'Analysing...';
+        beAnalysisResult.style.display = 'none';
+
+        fetch('/api/bot-engine/analyse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ logs: lastLogs })
+        })
+        .then(function(resp) {
+          if (!resp.ok) return resp.json().then(function(e) { throw new Error(e.error || resp.statusText); });
+          return resp.json();
+        })
+        .then(function(data) {
+          if (!data.ok) throw new Error(data.error || 'Analysis failed');
+          var text = data.analysis || '';
+          var paragraphs = text.split(/\n\n+/);
+          beAnalysisBody.innerHTML = paragraphs.map(function(p) {
+            var html = p.trim()
+              .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#818cf8">$1</strong>')
+              .replace(/\n/g, '<br>');
+            return '<p style="margin: 0.4rem 0;">' + html + '</p>';
+          }).join('');
+          beAnalysisResult.style.display = 'block';
+          beAnalysisResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .catch(function(e) {
+          beApiErr.textContent = 'Analysis error: ' + (e.message || e);
+          beApiErr.style.display = 'block';
+        })
+        .finally(function() {
+          beAnalyseBtn.disabled = false;
+          beAnalyseBtn.textContent = 'Analyse Logs';
+        });
+      });
+    })();
+
+    // --- Twilio Log Analysis sub-agent ---
+    (function() {
+      var twStatusEl = document.getElementById('twilioStatus');
+      var twFetchBtn = document.getElementById('twFetchBtn');
+      var twDownloadBtn = document.getElementById('twDownloadBtn');
+      var twDownloadJsonBtn = document.getElementById('twDownloadJsonBtn');
+      var twApiErr = document.getElementById('twApiErr');
+      var twResultEl = document.getElementById('twilioResult');
+      var twFromInput = document.getElementById('twFromNumber');
+      var twTimeSelect = document.getElementById('twTimeFilter');
+      var lastPayload = null;
+
+      fetch('/api/twilio/status').then(function(r) { return r.json(); }).then(function(d) {
+        if (d.connected) {
+          var acctCount = (d.subaccounts || []).length || 0;
+          twStatusEl.innerHTML = '<span style="color:var(--success);font-weight:600;">&#9679;</span> <span style="color:var(--text);font-size:0.9rem;">Connected &mdash; ' + acctCount + ' subaccount(s)</span>';
+        } else {
+          twStatusEl.innerHTML = '<span style="color:var(--danger);font-weight:600;">&#9679;</span> <span style="color:var(--muted);font-size:0.9rem;">Not connected: ' + (d.error || 'unknown') + '</span>';
+        }
+      }).catch(function() {
+        twStatusEl.innerHTML = '<span style="color:var(--danger);">&#9679;</span> <span class="hint">Could not check Twilio status</span>';
+      });
+
+      twFetchBtn.addEventListener('click', function() {
+        var fromNum = twFromInput.value.trim();
+        twApiErr.style.display = 'none';
+        twResultEl.style.display = 'none';
+        twDownloadBtn.style.display = 'none';
+        twDownloadJsonBtn.style.display = 'none';
+
+        if (!fromNum) {
+          twApiErr.textContent = 'Please enter a From number';
+          twApiErr.style.display = 'block';
+          return;
+        }
+
+        lastPayload = { from_number: fromNum, time_minutes: parseInt(twTimeSelect.value, 10) || 60 };
+        twFetchBtn.disabled = true;
+        twFetchBtn.textContent = 'Fetching...';
+
+        fetch('/api/twilio/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(lastPayload)
+        })
+        .then(function(resp) {
+          if (!resp.ok) return resp.json().then(function(e) { throw new Error(e.error || resp.statusText); });
+          return resp.json();
+        })
+        .then(function(data) {
+          if (!data.ok) { throw new Error(data.error || 'Unknown error'); }
+
+          var calls = data.calls || [];
+          document.getElementById('twTotalCount').textContent = Number(data.total || 0).toLocaleString();
+          document.getElementById('twFailedCount').textContent = Number(data.failed_calls || 0).toLocaleString();
+          document.getElementById('twLogCount').textContent = '(' + calls.length + ' calls)';
+
+          var tbody = document.getElementById('twLogsBody');
+          var twCallDetailEl = document.getElementById('twCallDetail');
+          twCallDetailEl.style.display = 'none';
+          twCallDetailEl.innerHTML = '';
+
+          tbody.innerHTML = calls.map(function(c, idx) {
+            var statusColor = (c.status === 'failed' || c.status === 'busy' || c.status === 'no-answer') ? 'var(--rose)' : 'var(--success)';
+            var dirIcon = (c.direction === 'inbound') ? '&#8592;' : '&#8594;';
+            var errText = c.error_code ? c.error_code + (c.error_message ? ': ' + c.error_message : '') : '-';
+            var sidShort = (c.sid || '').substring(0, 14) + '...';
+            return '<tr style="cursor:pointer;" onclick="twShowDetail(' + idx + ')" title="Click for details">'
+              + '<td style="font-family:JetBrains Mono,monospace;font-size:0.75rem;color:var(--cyan);white-space:nowrap;">' + sidShort + '</td>'
+              + '<td style="font-size:0.78rem;white-space:nowrap;">' + (c.start_time || '-') + '</td>'
+              + '<td style="font-family:JetBrains Mono,monospace;font-size:0.82rem;">' + (c.from_raw || c.from || '-') + '</td>'
+              + '<td style="font-family:JetBrains Mono,monospace;font-size:0.82rem;">' + (c.to_raw || c.to || '-') + '</td>'
+              + '<td>' + dirIcon + ' ' + (c.direction || '-') + '</td>'
+              + '<td style="color:' + statusColor + ';font-weight:600;text-transform:capitalize;">' + (c.status || '-') + '</td>'
+              + '<td style="white-space:nowrap;">' + (c.duration_fmt || (c.duration != null ? c.duration + 's' : '-')) + '</td>'
+              + '<td style="font-size:0.82rem;">' + (c.price || '-') + '</td>'
+              + '<td>' + (c.account || '-') + '</td>'
+              + '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.78rem;color:var(--rose);">' + errText + '</td>'
+              + '</tr>';
+          }).join('');
+
+          window._twCalls = calls;
+          window.twShowDetail = function(idx) {
+            var c = window._twCalls[idx];
+            if (!c) return;
+            var statusColor = (c.status === 'failed' || c.status === 'busy' || c.status === 'no-answer') ? 'var(--rose)' : 'var(--success)';
+            twCallDetailEl.style.display = 'block';
+            twCallDetailEl.innerHTML = ''
+              + '<div class="card" style="margin-bottom:0;">'
+              + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">'
+              + '<h2 style="margin:0;font-size:1.1rem;">Call Details</h2>'
+              + '<button type="button" onclick="document.getElementById(\'twCallDetail\').style.display=\'none\'" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--muted);">&times;</button>'
+              + '</div>'
+              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">'
+              /* Left column */
+              + '<div>'
+              + '<h3 style="font-size:0.85rem;color:var(--muted);margin:0 0 0.75rem;">Properties</h3>'
+              + '<table style="width:100%;font-size:0.85rem;border-collapse:collapse;">'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);width:40%;">Call SID</td><td style="font-family:JetBrains Mono,monospace;font-size:0.78rem;">' + (c.sid || '-') + '</td></tr>'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);">Date</td><td>' + (c.start_time || '-') + '</td></tr>'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);">Start Time</td><td>' + (c.start_time || '-') + '</td></tr>'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);">End Time</td><td>' + (c.end_time || '-') + '</td></tr>'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);">Duration</td><td>' + (c.duration_fmt || '-') + '</td></tr>'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);">Price</td><td>' + (c.price || '-') + '</td></tr>'
+              + '</table>'
+              + '</div>'
+              /* Right column */
+              + '<div>'
+              + '<h3 style="font-size:0.85rem;color:var(--muted);margin:0 0 0.75rem;">Connection</h3>'
+              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">'
+              + '<div style="background:var(--surface-2);border-radius:8px;padding:0.75rem;">'
+              + '<div style="font-weight:700;font-size:0.9rem;margin-bottom:0.4rem;">FROM: ' + (c.from_raw || c.from || '-') + '</div>'
+              + '<div style="font-size:0.82rem;color:var(--muted);">' + (c.caller_name || '') + '</div>'
+              + '</div>'
+              + '<div style="background:var(--surface-2);border-radius:8px;padding:0.75rem;">'
+              + '<div style="font-weight:700;font-size:0.9rem;margin-bottom:0.4rem;">TO: ' + (c.to_raw || c.to || '-') + '</div>'
+              + '</div>'
+              + '</div>'
+              + '<table style="width:100%;font-size:0.85rem;border-collapse:collapse;margin-top:1rem;">'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);width:40%;">Direction</td><td style="text-transform:capitalize;">' + (c.direction || '-') + '</td></tr>'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);">Status</td><td style="color:' + statusColor + ';font-weight:600;text-transform:capitalize;">' + (c.status || '-') + '</td></tr>'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);">Account</td><td>' + (c.account || '-') + '</td></tr>'
+              + '<tr><td style="padding:0.35rem 0;color:var(--muted);">Namespace</td><td>' + (c.namespace || '-') + '</td></tr>'
+              + (c.error_code ? '<tr><td style="padding:0.35rem 0;color:var(--rose);">Error Code</td><td style="color:var(--rose);font-weight:600;">' + c.error_code + '</td></tr>' : '')
+              + (c.error_message ? '<tr><td style="padding:0.35rem 0;color:var(--rose);">Error Message</td><td style="color:var(--rose);">' + c.error_message + '</td></tr>' : '')
+              + '</table>'
+              + '</div>'
+              + '</div>'
+              + '</div>';
+            twCallDetailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          };
+
+          twResultEl.style.display = 'block';
+          twDownloadBtn.style.display = '';
+          twDownloadJsonBtn.style.display = '';
+        })
+        .catch(function(e) {
+          twApiErr.textContent = 'Error: ' + (e.message || e);
+          twApiErr.style.display = 'block';
+        })
+        .finally(function() {
+          twFetchBtn.disabled = false;
+          twFetchBtn.textContent = 'Fetch Logs';
+        });
+      });
+
+      function twDownloadAs(format) {
+        var btn = format === 'json' ? twDownloadJsonBtn : twDownloadBtn;
+        var label = format === 'json' ? 'Download JSON' : 'Download Table';
+        var fallback = format === 'json' ? 'twilio_logs.json' : 'twilio_logs.csv';
+        if (!lastPayload) return;
+        btn.disabled = true;
+        btn.textContent = 'Downloading...';
+
+        fetch('/api/download/twilio-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from_number: lastPayload.from_number, time_minutes: lastPayload.time_minutes, format: format })
+        })
+        .then(function(resp) {
+          if (!resp.ok) return resp.json().then(function(e) { throw new Error(e.error || resp.statusText); });
+          return resp.blob().then(function(blob) {
+            var disp = resp.headers.get('Content-Disposition') || '';
+            var m = disp.match(/filename=(.+)/);
+            var fname = m ? m[1] : fallback;
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url; a.download = fname; a.click();
+            URL.revokeObjectURL(url);
+          });
+        })
+        .catch(function(e) { alert('Download error: ' + e.message); })
+        .finally(function() {
+          btn.disabled = false;
+          btn.textContent = label;
+        });
+      }
+
+      twDownloadBtn.addEventListener('click', function() { twDownloadAs('csv'); });
+      twDownloadJsonBtn.addEventListener('click', function() { twDownloadAs('json'); });
+    })();
 
     // --- Slack integration ---
     const slackBtn = document.getElementById('sendToSlackBtn');

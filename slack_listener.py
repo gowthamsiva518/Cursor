@@ -56,9 +56,13 @@ def _extract_error_codes(text: str) -> list[int]:
     """Pull HTTP error codes (3-digit, 400-599) from message text.
 
     Only extracts codes that look like real HTTP status codes to avoid
-    picking up noise (years, port numbers, URL fragments, etc.).
+    picking up noise (years, port numbers, URL fragments, error counts like
+    "441 errors in the last 30 minutes", etc.).
     """
-    candidates = re.findall(r"\b([45]\d{2})\b", text)
+    # Strip monitor count patterns ("N errors in the last M min") so the
+    # count isn't mistaken for an HTTP code (e.g. "441 errors" → 441 ≠ HTTP 441)
+    cleaned = re.sub(r"\b\d+\s+errors?\s+in\s+the\s+last\b", "", text, flags=re.IGNORECASE)
+    candidates = re.findall(r"\b([45]\d{2})\b", cleaned)
     seen: set[int] = set()
     codes: list[int] = []
     for c in candidates:

@@ -82,7 +82,9 @@ def _time_range(
 def _get_nested(obj: dict, path: str) -> Any:
     """Get nested key, e.g. rawLog.data.error.name."""
     for part in path.split("."):
-        obj = (obj or {}).get(part)
+        if not isinstance(obj, dict):
+            return None
+        obj = obj.get(part)
         if obj is None:
             return None
     return obj if not isinstance(obj, dict) else None
@@ -190,15 +192,29 @@ def query_errors(
 
     res = run_search(query_body)
     if res is None and error_name_field:
-        # Try without .keyword for aggregation (e.g. if field is already keyword)
         if "by_error_name" in query_body["aggs"]:
             query_body["aggs"]["by_error_name"]["terms"]["field"] = error_name_field
             res = run_search(query_body)
     if res is None and "by_tenant" in query_body["aggs"]:
         query_body["aggs"]["by_tenant"]["terms"]["field"] = tenant_field
+        query_body["aggs"]["by_tenant_error_code"]["terms"]["field"] = tenant_field
         res = run_search(query_body)
     if res is None:
         return {"total": 0, "tenants": [], "sample": [], "by_error_name": [], "by_error_code": [], "error": "OpenSearch query failed (check index/field names or connection)"}
+
+    # If the query succeeded but tenant aggregation is empty despite having hits,
+    # retry with the base tenant field (without .keyword suffix)
+    _hits_total = (res.get("hits", {}).get("total") or {})
+    _total_val = _hits_total.get("value", 0) if isinstance(_hits_total, dict) else (_hits_total or 0)
+    _tenant_buckets = (res.get("aggregations", {}).get("by_tenant", {}).get("buckets") or [])
+    if _total_val > 0 and not _tenant_buckets and tenant_agg_field != tenant_field:
+        query_body["aggs"]["by_tenant"]["terms"]["field"] = tenant_field
+        query_body["aggs"]["by_tenant_error_code"]["terms"]["field"] = tenant_field
+        retry_res = run_search(query_body)
+        if retry_res is not None:
+            _retry_buckets = (retry_res.get("aggregations", {}).get("by_tenant", {}).get("buckets") or [])
+            if _retry_buckets:
+                res = retry_res
 
     hits = (res or {}).get("hits", {})
     total = hits.get("total") or {}
@@ -688,6 +704,163 @@ def query_bot_engine_by_connection(
         "logs": logs,
         "error_codes": error_code_counts,
     }
+
+
+def _extract_connection_id(src: dict) -> str:
+    """Extract connectionId from rawLog.data.data.metadata.connectionId in _source."""
+    try:
+        raw = src.get("rawLog")
+        if not isinstance(raw, dict):
+            return ""
+        d1 = raw.get("data")
+        if not isinstance(d1, dict):
+            return ""
+        d2 = d1.get("data")
+        if not isinstance(d2, dict):
+            return ""
+        meta = d2.get("metadata")
+        if not isinstance(meta, dict):
+            return ""
+        return str(meta.get("connectionId") or "")
+    except Exception:
+        return ""
+
+
+def _uuid1_to_datetime(uid_str: str):
+    """Extract the embedded timestamp from a UUIDv1 string.
+
+    Returns a datetime (UTC) or None if the string is not a valid UUIDv1.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timezone
+    try:
+        u = _uuid.UUID(uid_str)
+        if u.version != 1:
+            return None
+        epoch_ns = (u.time - 0x01B21DD213814000) * 100
+        return datetime.fromtimestamp(epoch_ns / 1e9, tz=timezone.utc)
+    except Exception:
+        return None
+
+
+def query_bot_engine_default_logs(
+    connection_id: str,
+    time_minutes: int | None = None,
+    index: str | None = None,
+    max_logs: int = 500,
+) -> dict[str, Any] | None:
+    """
+    Query bot engine logs by rawLog.data.data.metadata.connectionId.
+
+    The connectionId field is stored in _source but NOT indexed by OpenSearch,
+    so we fetch docs and filter by connectionId in Python.
+
+    If the connectionId is a UUIDv1 we extract its embedded timestamp and
+    search a tight ±2-hour window around it (much faster than scanning from
+    the newest docs).  Otherwise we fall back to the user-selected time window.
+    When time_minutes is None or 0 and the UUID extraction works, only the
+    UUID-derived window is used.
+
+    Returns None when the bot engine index is not configured; otherwise
+    { total, logs[], scanned }.
+    """
+    if not connection_id or not connection_id.strip():
+        return {"total": 0, "logs": [], "error": "connection_id is required"}
+
+    client = _get_client()
+    if not client:
+        return None
+
+    index_pattern = index or os.environ.get("OPENSEARCH_BOT_ENGINE_INDEX", "").strip()
+    if not index_pattern:
+        return None
+
+    time_field = os.environ.get("OPENSEARCH_TIME_FIELD", "@timestamp")
+    cid = connection_id.strip()
+
+    # Build time filter: prefer a tight window derived from the UUID timestamp
+    uuid_dt = _uuid1_to_datetime(cid)
+    if uuid_dt:
+        from datetime import timedelta
+        window_start = (uuid_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        window_end = (uuid_dt + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        time_filter = {"range": {time_field: {"gte": window_start, "lte": window_end}}}
+    elif time_minutes and time_minutes > 0:
+        time_filter = _time_range(time_field, time_minutes)
+    else:
+        time_filter = None
+
+    # The connectionId field is not indexed, so we fetch in batches and
+    # filter in Python.  Use search_after for pagination.
+    batch_size = 2000
+    matched: list[dict[str, Any]] = []
+    search_after = None
+    scanned = 0
+    max_scan = 200000
+
+    while scanned < max_scan and len(matched) < max_logs:
+        filters = [time_filter] if time_filter else []
+        query_body: dict[str, Any] = {
+            "size": batch_size,
+            "query": {"bool": {"filter": filters}} if filters else {"match_all": {}},
+            "sort": [{time_field: {"order": "asc"}}, {"_id": "asc"}],
+        }
+        if search_after:
+            query_body["search_after"] = search_after
+
+        try:
+            res = client.search(index=index_pattern, body=query_body, ignore_unavailable=True)
+        except Exception as exc:
+            return {"total": len(matched), "logs": matched, "error": str(exc)}
+
+        hits_list = (res or {}).get("hits", {}).get("hits", [])
+        if not hits_list:
+            break
+
+        for h in hits_list:
+            src = h.get("_source") or {}
+            doc_cid = _extract_connection_id(src)
+            if doc_cid == cid:
+                matched.append({
+                    "timestamp": _get_nested(src, "@timestamp") or src.get("@timestamp") or "",
+                    "level": src.get("level") or "",
+                    "tenant_name": str(_get_nested(src, "rawLog.tenantName") or src.get("tenant_name") or ""),
+                    "api_name": str(_get_nested(src, "rawLog.data.apiName") or ""),
+                    "method_name": str(_get_nested(src, "rawLog.data.methodName") or ""),
+                    "connection_id": doc_cid,
+                    "message": str(src.get("msg") or src.get("message") or ""),
+                    "error_code": str(_get_nested(src, "rawLog.data.error.code") or _get_nested(src, "rawLog.data.status") or ""),
+                    "error_stack": str(_get_nested(src, "rawLog.data.error.stack") or _get_nested(src, "rawLog.data.stack") or ""),
+                    "error_message": str(_get_nested(src, "rawLog.data.error.message") or _get_nested(src, "rawLog.data.message") or ""),
+                    "_raw": src,
+                })
+                if len(matched) >= max_logs:
+                    break
+
+        scanned += len(hits_list)
+        search_after = hits_list[-1].get("sort")
+        if not search_after:
+            break
+
+    matched.sort(key=lambda l: l.get("timestamp") or "")
+
+    return {"total": len(matched), "logs": matched, "scanned": scanned}
+
+
+def check_bot_engine_index() -> dict[str, Any]:
+    """Check if the bot engine OpenSearch index is configured and reachable."""
+    index_pattern = os.environ.get("OPENSEARCH_BOT_ENGINE_INDEX", "").strip()
+    if not index_pattern:
+        return {"configured": False, "connected": False, "message": "OPENSEARCH_BOT_ENGINE_INDEX not set in .env"}
+    client = _get_client()
+    if not client:
+        return {"configured": True, "connected": False, "message": "OpenSearch client not available"}
+    try:
+        res = client.count(index=index_pattern, body={"query": {"match_all": {}}}, ignore_unavailable=True)
+        count = res.get("count", 0)
+        return {"configured": True, "connected": True, "index": index_pattern, "doc_count": count}
+    except Exception as e:
+        return {"configured": True, "connected": False, "index": index_pattern, "error": str(e)}
 
 
 def _is_error_level(level: Any) -> bool:
