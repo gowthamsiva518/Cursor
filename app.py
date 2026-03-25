@@ -138,23 +138,21 @@ def api_twilio_logs():
         pass
 
     try:
-        result = query_call_logs(time_minutes=time_minutes)
+        result = query_call_logs(time_minutes=time_minutes, from_number=from_number)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
     if result.get("error"):
         return jsonify({"ok": False, "error": result["error"]}), 500
 
-    needle = _phone_digits(from_number)
     all_calls = result.get("calls", [])
-    filtered = [c for c in all_calls if needle and needle in _phone_digits(c.get("from", ""))]
-    failed = sum(1 for c in filtered if c.get("error_code"))
+    failed = sum(1 for c in all_calls if c.get("error_code"))
 
     return jsonify({
         "ok": True,
-        "total": len(filtered),
+        "total": len(all_calls),
         "failed_calls": failed,
-        "calls": filtered,
+        "calls": all_calls,
         "accounts_checked": result.get("accounts_checked", []),
     })
 
@@ -181,16 +179,14 @@ def api_download_twilio_logs():
     fmt = (data.get("format") or "csv").strip().lower()
 
     try:
-        result = query_call_logs(time_minutes=time_minutes)
+        result = query_call_logs(time_minutes=time_minutes, from_number=from_number)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
     if result.get("error"):
         return jsonify({"ok": False, "error": result["error"]}), 500
 
-    needle = _phone_digits(from_number)
-    all_calls = result.get("calls", [])
-    filtered = [c for c in all_calls if needle and needle in _phone_digits(c.get("from", ""))]
+    filtered = result.get("calls", [])
     safe_name = re.sub(r"[^\w\-]", "", from_number)
     base_name = f"twilio_logs_{safe_name}_{len(filtered)}_rows"
 

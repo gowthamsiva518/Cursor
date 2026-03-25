@@ -304,9 +304,14 @@ def query_call_logs(
     phone_numbers: list[str] | None = None,
     limit: int = 200,
     tenant_names: list[str] | None = None,
+    from_number: str | None = None,
 ) -> dict[str, Any]:
     """
     Fetch recent call logs within the time window from all active subaccounts.
+
+    When *from_number* is provided, the Twilio API is queried with a ``from_``
+    filter so only calls originating from that number are returned — much faster
+    and more complete than post-fetch filtering.
 
     When *tenant_names* is provided, only subaccounts whose namespace matches
     one of the given tenant names (startswith) are queried — significantly
@@ -345,7 +350,10 @@ def query_call_logs(
     def _fetch_sub(args):
         sub_name, sub_client = args
         try:
-            sub_calls = sub_client.calls.list(start_time_after=start_after, limit=per_sub_limit)
+            list_kwargs = dict(start_time_after=start_after, limit=per_sub_limit)
+            if from_number:
+                list_kwargs["from_"] = from_number
+            sub_calls = sub_client.calls.list(**list_kwargs)
             local_calls: list[dict[str, Any]] = []
             local_status: dict[str, int] = {}
             local_num_stats: dict[str, dict[str, int]] = {}
