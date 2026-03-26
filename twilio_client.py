@@ -398,34 +398,131 @@ def query_call_logs(
     }
 
 
-def query_alerts(time_minutes: int = 60, limit: int = 50) -> dict[str, Any]:
-    """Fetch Twilio alerts/notifications within the time window."""
+def query_alerts(
+    time_minutes: int = 60,
+    limit: int = 200,
+    tenant_names: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch Twilio error logs (Monitor Alerts) within the time window.
+
+    When *tenant_names* is provided, only queries the subaccounts whose
+    namespace matches one of the given tenant names.
+    """
     client = _get_client()
     if client is None:
         return {"error": "Twilio not configured", "alerts": []}
 
     start_after = datetime.now(timezone.utc) - timedelta(minutes=time_minutes)
+    ist = timezone(timedelta(hours=5, minutes=30))
+    ns_map = _get_sid_namespace_map()
 
-    try:
-        alerts_iter = client.monitor.alerts.list(
-            start_date=start_after,
-            limit=limit,
-        )
-    except Exception as e:
-        return {"error": str(e), "alerts": []}
+    def _fetch_alerts_for_client(cli, acct_name: str) -> list[dict[str, Any]]:
+        result = []
+        try:
+            alerts_iter = cli.monitor.alerts.list(start_date=start_after, limit=limit)
+            for a in alerts_iter:
+                created = ""
+                if a.date_created:
+                    if hasattr(a.date_created, "astimezone"):
+                        created = a.date_created.astimezone(ist).strftime("%Y-%m-%d %H:%M:%S IST")
+                    else:
+                        created = str(a.date_created)
+
+                acct_sid = getattr(a, "account_sid", "") or ""
+                namespace = ns_map.get(acct_sid, "")
+
+                alert_text = (a.alert_text or "")[:500]
+                description = ""
+                if a.error_code:
+                    ec = str(a.error_code)
+                    description = _TWILIO_ERROR_DESCRIPTIONS.get(ec, alert_text)
+
+                result.append({
+                    "sid": a.sid,
+                    "error_code": str(a.error_code) if a.error_code else "",
+                    "log_level": a.log_level or "",
+                    "description": description,
+                    "alert_text": alert_text,
+                    "date_created": created,
+                    "resource_sid": a.resource_sid or "",
+                    "product": "Programmable Voice",
+                    "account": acct_name,
+                    "account_sid": acct_sid,
+                    "namespace": namespace,
+                })
+        except Exception:
+            pass
+        return result
 
     alerts: list[dict[str, Any]] = []
-    for a in alerts_iter:
-        alerts.append({
-            "sid": a.sid,
-            "error_code": a.error_code,
-            "log_level": a.log_level,
-            "alert_text": a.alert_text[:300] if a.alert_text else "",
-            "date_created": a.date_created.isoformat() if hasattr(a.date_created, "isoformat") else str(a.date_created),
-            "resource_sid": a.resource_sid or "",
-        })
+    accounts_checked: list[str] = []
+
+    sub_clients = _get_subaccount_clients()
+    if tenant_names:
+        sub_clients = _filter_subs_by_tenants(sub_clients, tenant_names)
+
+    max_workers = int(os.environ.get("TWILIO_WORKERS", "100"))
+
+    def _worker(args):
+        name, cli = args
+        return name, _fetch_alerts_for_client(cli, name)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_worker, item) for item in sub_clients]
+        for future in as_completed(futures):
+            name, sub_alerts = future.result()
+            alerts.extend(sub_alerts)
+            accounts_checked.append(name)
+
+    alerts.sort(key=lambda a: a.get("date_created", ""), reverse=True)
+
+    error_codes: dict[str, int] = {}
+    for a in alerts:
+        code = a.get("error_code") or "unknown"
+        error_codes[code] = error_codes.get(code, 0) + 1
 
     return {
         "alerts": alerts,
         "total_alerts": len(alerts),
+        "error_codes": error_codes,
+        "accounts_checked": accounts_checked,
     }
+
+
+_TWILIO_ERROR_DESCRIPTIONS: dict[str, str] = {
+    "11200": "HTTP retrieval failure",
+    "11205": "HTTP connection failure",
+    "11210": "HTTP bad host name",
+    "11215": "HTTP too many redirects",
+    "11220": "HTTP timeout",
+    "11235": "HTTPS certificate error",
+    "11750": "TwiML response body too large",
+    "11751": "MMS media too large",
+    "12100": "Document parse failure",
+    "12200": "Schema validation warning",
+    "12300": "Invalid Content-Type",
+    "12400": "Internal failure",
+    "13221": "Dial: Invalid phone number format",
+    "13224": "Dial: Invalid timeout",
+    "13225": "Dial: Forbidden phone number",
+    "13227": "Dial: Invalid nested TwiML",
+    "14101": "Say: Invalid voice",
+    "15003": "Call Progress: Warning Response to Callback URL",
+    "21201": "No account found",
+    "21210": "Phone number not found",
+    "21211": "Invalid phone number",
+    "21214": "Phone number cannot be reached",
+    "21215": "Account not active",
+    "21217": "Phone number does not appear valid",
+    "21610": "Message undeliverable (blocked)",
+    "30001": "Queue overflow",
+    "30002": "Account suspended",
+    "30003": "Unreachable destination",
+    "30004": "Message blocked",
+    "30005": "Unknown destination handset",
+    "30006": "Landline or unreachable carrier",
+    "30007": "Carrier violation",
+    "30008": "Unknown error",
+    "32205": "Domain SID validation failure",
+}

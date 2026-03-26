@@ -202,7 +202,7 @@ def query_pod_restarts(
 
 def check_k8s_connection() -> bool:
     """Return True if kubectl can reach the cluster."""
-    data = _run_kubectl(["get", "namespaces", "--limit=1"], timeout=20)
+    data = _run_kubectl(["get", "namespaces"], timeout=20)
     if data is None:
         return False
     return "error" not in data

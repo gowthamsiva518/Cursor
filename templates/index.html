@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Gowtham Assistant</title>
+  <title>Gowtham's Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -180,10 +180,7 @@
     #errorCountSection h3 { color: var(--sky); }
     #lensSection { border-left-color: var(--emerald); }
     #lensSection h3 { color: var(--emerald); }
-    #rcaSection { border-left-color: var(--amber); }
-    #rcaSection h3 { color: var(--amber); }
-    #rcaTwilioSection { border-left: 3px solid var(--violet); border-radius: 8px; padding: 0.8rem 1rem; background: var(--surface); margin-bottom: 1rem; }
-    #rcaTwilioSection h4 { color: var(--violet); margin: 0 0 0.4rem 0; }
+    #rcaSection { margin-top: 1.25rem; }
 
     /* Tables */
     .client-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; margin-top: 0.5rem; border-radius: 8px; overflow: hidden; }
@@ -303,7 +300,7 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Gowtham Assistant</h1>
+    <h1>Gowtham's Assistant</h1>
     <p class="sub">Select a tool to get started.</p>
 
     <!-- Home Page -->
@@ -323,6 +320,11 @@
           <div class="tile-icon" style="background:linear-gradient(135deg,var(--rose),var(--orange));">&#128222;</div>
           <h3>Twilio Log Analysis</h3>
           <p>Search Twilio call logs by From number across all subaccounts.</p>
+        </div>
+        <div class="home-tile" onclick="showView('settingsView')">
+          <div class="tile-icon" style="background:linear-gradient(135deg,#8b8b9e,#5a5a72);">&#9881;</div>
+          <h3>Settings</h3>
+          <p>View configuration details and connection status for all agents.</p>
         </div>
       </div>
     </div>
@@ -415,8 +417,8 @@
         </table>
         <div class="download-row" id="downloadRow" style="display: none; margin-top: 1rem;">
           <button type="button" class="btn secondary" id="downloadCountCsv">Download error count (CSV)</button>
-          <button type="button" class="btn secondary" id="downloadJson">Download error count (JSON)</button>
           <button type="button" class="btn secondary" id="downloadLogsCsv">Download error logs (CSV)</button>
+          <button type="button" class="btn secondary" id="downloadLogsJson">Download error logs (JSON)</button>
         </div>
       </div>
       <div class="agent-actions" id="lensSection" style="display: none;">
@@ -431,49 +433,79 @@
           <button type="button" class="btn secondary" id="downloadLensJson">Download pod restarts (JSON)</button>
         </div>
       </div>
-      <div class="agent-actions" id="rcaSection" style="display: none;">
-        <div id="rcaTwilioSection" style="display: none; margin-bottom: 1rem;">
-          <h4 style="margin: 0 0 0.4rem 0;">Twilio Call Logs</h4>
-          <div id="rcaTwilioErrorCodes" style="margin: 0.4rem 0;"></div>
-          <p class="hint" id="rcaTwilioSummary" style="margin: 0 0 0.5rem 0;"></p>
-          <table class="client-table" id="rcaTwilioTable" style="display: none;">
-            <thead><tr><th>Time</th><th>Account</th><th>Namespace</th><th>From</th><th>To</th><th>Direction</th><th>Status</th><th>Duration</th><th>Error Code</th><th>Error Message</th></tr></thead>
-            <tbody id="rcaTwilioBody"></tbody>
-          </table>
-        </div>
-        <div id="rcaTopTenants" style="margin-bottom: 0.75rem;"></div>
-        <h3 style="margin-top: 1.25rem; font-size: 0.9rem;">Root Cause Analysis (RCA)</h3>
-        <div id="rcaAiSummary" style="display:none; margin: 0.75rem 0; padding: 1.1rem 1.3rem; background: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(34,211,238,0.05) 50%, rgba(192,132,252,0.05) 100%); border: 1px solid rgba(99,102,241,0.2); border-radius: 12px; line-height: 1.7; box-shadow: 0 4px 20px rgba(99,102,241,0.08);">
-          <h4 style="margin: 0 0 0.6rem 0; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+      <div id="rcaSection" style="display:none;">
+        <!-- Quick Overview Cards -->
+        <div id="rcaOverviewCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;margin-bottom:1.25rem;"></div>
+
+        <!-- AI Summary -->
+        <div id="rcaAiSummary" style="display:none; margin-bottom:1.25rem; padding:1.2rem 1.4rem; background:linear-gradient(135deg,rgba(99,102,241,0.1) 0%,rgba(34,211,238,0.05) 50%,rgba(192,132,252,0.05) 100%); border:1px solid rgba(99,102,241,0.2); border-radius:12px; line-height:1.7;">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem;">
             <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--violet));font-size:0.9rem;">&#9889;</span>
-            <span style="background: linear-gradient(135deg, var(--accent-light), var(--violet)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 600;">AI-Powered RCA Summary</span>
-          </h4>
-          <div id="rcaAiSummaryBody" style="font-size: 0.9rem; line-height: 1.65;"></div>
+            <span style="background:linear-gradient(135deg,var(--accent-light),var(--violet));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:700;font-size:1rem;">AI-Powered RCA Summary</span>
+          </div>
+          <div id="rcaAiSummaryBody" style="font-size:0.9rem;line-height:1.7;"></div>
         </div>
-        <ul id="rcaDetails" style="margin: 0.5rem 0 0 1.2rem;"></ul>
-        <div id="rcaBotEngineConnSection" style="display: none; margin-top: 1rem;">
-          <h4 style="margin: 0 0 0.4rem 0;">Bot Engine Error Codes (by connection_id)</h4>
-          <div id="rcaBotEngineErrorCodes" style="margin: 0.4rem 0;"></div>
-          <p class="hint" id="rcaBotEngineConnSummary" style="margin: 0 0 0.5rem 0;"></p>
-          <table class="client-table" id="rcaBotEngineConnTable" style="display: none;">
-            <thead><tr><th>Timestamp</th><th>Connection ID</th><th>Tenant</th><th>Error code</th><th>Event type</th><th>Message</th></tr></thead>
-            <tbody id="rcaBotEngineConnBody"></tbody>
-          </table>
+
+        <!-- What Happened (findings) -->
+        <div id="rcaFindings" style="background:var(--surface-2);border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:1rem;">
+          <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+            <span style="font-size:1.1rem;">&#128270;</span> What Happened
+          </div>
+          <ul id="rcaDetails" style="margin:0;padding-left:1.2rem;font-size:0.88rem;line-height:1.7;color:var(--text-dim);"></ul>
         </div>
-        <div id="rcaErrorPatterns" style="display: none; margin-top: 1.25rem;">
-          <h4 style="color: var(--cyan); margin: 0 0 0.6rem 0;">Error Pattern Analysis</h4>
-          <p id="errorPatternSummary" style="font-size:0.85rem;color:var(--text-dim);margin:0 0 0.8rem;"></p>
+
+        <!-- Impacted Tenants -->
+        <div id="rcaTopTenants" style="margin-bottom:1rem;"></div>
+
+        <!-- Twilio Section -->
+        <div id="rcaTwilioSection" style="display:none;background:var(--surface-2);border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:1rem;">
+          <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.4rem;">
+            <span style="font-size:1.1rem;">&#128222;</span> Twilio Call Logs
+          </div>
+          <div id="rcaTwilioErrorCodes" style="margin:0.4rem 0;"></div>
+          <p class="hint" id="rcaTwilioSummary" style="margin:0 0 0.5rem 0;"></p>
+          <div style="overflow-x:auto;">
+            <table class="client-table" id="rcaTwilioTable" style="display:none;">
+              <thead><tr><th>Time</th><th>Account</th><th>From</th><th>To</th><th>Status</th><th>Duration</th><th>Error</th></tr></thead>
+              <tbody id="rcaTwilioBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Bot Engine Errors -->
+        <div id="rcaBotEngineConnSection" style="display:none;background:var(--surface-2);border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:1rem;">
+          <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.4rem;">
+            <span style="font-size:1.1rem;">&#129302;</span> Bot Engine Errors
+          </div>
+          <div id="rcaBotEngineErrorCodes" style="margin:0.4rem 0;"></div>
+          <p class="hint" id="rcaBotEngineConnSummary" style="margin:0 0 0.5rem 0;"></p>
+          <div style="overflow-x:auto;">
+            <table class="client-table" id="rcaBotEngineConnTable" style="display:none;">
+              <thead><tr><th>Time</th><th>Connection ID</th><th>Tenant</th><th>Error Code</th><th>Event</th><th>Message</th></tr></thead>
+              <tbody id="rcaBotEngineConnBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Error Pattern Analysis -->
+        <div id="rcaErrorPatterns" style="display:none;background:var(--surface-2);border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:1rem;">
+          <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.4rem;">
+            <span style="font-size:1.1rem;">&#128200;</span> Error Patterns
+            <span id="errorPatternSummary" style="font-size:0.78rem;color:var(--muted);font-weight:400;margin-left:0.3rem;"></span>
+          </div>
           <div id="rootCauseCards"></div>
-          <div id="connectionCards" style="margin-top: 0.8rem;"></div>
+          <div id="connectionCards" style="margin-top:0.6rem;"></div>
         </div>
-        <div class="download-row" style="margin-top: 1rem;">
+
+        <!-- Download / Slack -->
+        <div class="download-row" style="margin-top:1rem;">
           <button type="button" class="btn secondary" id="downloadRcaTxt">Download RCA (Text)</button>
           <button type="button" class="btn secondary" id="downloadRcaJson">Download RCA (JSON)</button>
           <button type="button" class="btn secondary" id="sendToSlackBtn" style="background:linear-gradient(135deg,#4A154B,#611f69);color:#fff;border:none;display:none;">
             <span style="margin-right:0.4rem;">&#128172;</span> Send to Slack
           </button>
         </div>
-        <div id="slackSendStatus" style="display:none; margin-top:0.5rem; font-size:0.85rem; padding: 0.5rem 0.75rem; border-radius: 8px;"></div>
+        <div id="slackSendStatus" style="display:none;margin-top:0.5rem;font-size:0.85rem;padding:0.5rem 0.75rem;border-radius:8px;"></div>
       </div>
       <p class="scenario" id="outScenario" style="margin-top: 1.5rem;"></p>
       <p class="conclusion" id="outConclusion"></p>
@@ -552,12 +584,20 @@
           </div>
         </div>
 
-        <div id="beAnalysisResult" style="display:none; margin-top:1.25rem; padding:1.1rem 1.3rem; background:linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(34,211,238,0.05) 50%, rgba(192,132,252,0.05) 100%); border:1px solid rgba(99,102,241,0.2); border-radius:12px; line-height:1.7; box-shadow:0 4px 20px rgba(99,102,241,0.08); animation: fadeIn 0.3s ease-out;">
-          <h4 style="margin:0 0 0.6rem 0; font-size:1rem; display:flex; align-items:center; gap:0.5rem;">
-            <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--violet));font-size:0.9rem;">&#9889;</span>
-            <span style="background:linear-gradient(135deg, var(--accent-light), var(--violet)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; font-weight:600;">AI Log Analysis</span>
-          </h4>
-          <div id="beAnalysisBody" style="font-size:0.9rem; line-height:1.65;"></div>
+        <div id="beAnalysisResult" style="display:none; margin-top:1.25rem; animation: fadeIn 0.3s ease-out;">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);">
+            <div style="padding:1rem 1.25rem;background:linear-gradient(135deg, rgba(99,102,241,0.15), rgba(192,132,252,0.1));border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:0.6rem;">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--violet));font-size:1rem;">&#9889;</span>
+                <div>
+                  <div style="font-weight:700;font-size:1rem;background:linear-gradient(135deg,var(--accent-light),var(--violet));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">AI Log Analysis</div>
+                  <div id="beAnalysisMeta" style="font-size:0.75rem;color:var(--muted);margin-top:0.15rem;"></div>
+                </div>
+              </div>
+              <div id="beVerdictBadge" style="display:none;padding:0.3rem 0.8rem;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.03em;"></div>
+            </div>
+            <div id="beAnalysisBody" style="padding:1.25rem;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -576,8 +616,20 @@
         <span class="hint">Checking Twilio connection...</span>
       </div>
       <div>
-        <label for="twFromNumber">From number <span style="color:var(--rose);font-size:0.8rem;">*required</span></label>
+        <label for="twFromNumber">From number <span style="font-size:0.78rem;color:var(--muted);font-weight:400;">(Twilio call logs)</span></label>
         <input type="text" id="twFromNumber" placeholder="e.g. +14155551234" style="font-size:0.88rem;">
+
+        <label for="twTenantSelect" style="margin-top: 1rem;">Tenant</label>
+        <div style="display:flex;gap:0.5rem;">
+          <select id="twTenantSelect" style="flex:1;">
+            <option value="">— None —</option>
+          </select>
+          <select id="twLogType" style="width:160px;">
+            <option value="call_logs">Call Logs</option>
+            <option value="error_logs">Error Logs</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
 
         <label for="twTimeFilter" style="margin-top: 1rem;">Time window</label>
         <select id="twTimeFilter" style="width: 100%;">
@@ -606,46 +658,102 @@
       </div>
 
       <div id="twilioResult" style="display: none; margin-top: 1.25rem;">
-        <div style="display:flex;gap:1rem;margin-bottom:1rem;">
-          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
-            <div style="font-size:1.5rem;font-weight:700;color:var(--cyan);" id="twTotalCount">0</div>
-            <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Total Calls</div>
+        <div id="twCallSection">
+          <div style="display:flex;gap:1rem;margin-bottom:1rem;">
+            <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
+              <div style="font-size:1.5rem;font-weight:700;color:var(--cyan);" id="twTotalCount">0</div>
+              <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Total Calls</div>
+            </div>
+            <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
+              <div style="font-size:1.5rem;font-weight:700;color:var(--rose);" id="twFailedCount">0</div>
+              <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Failed Calls</div>
+            </div>
           </div>
-          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
-            <div style="font-size:1.5rem;font-weight:700;color:var(--rose);" id="twFailedCount">0</div>
-            <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Failed Calls</div>
+
+          <div class="agent-actions" id="twLogsSection" style="border-left-color: var(--rose);">
+            <h3 style="color: var(--rose);">Call logs <span id="twLogCount" style="font-weight:400;font-size:0.78rem;color:var(--muted);text-transform:none;letter-spacing:0;"></span></h3>
+            <div style="max-height:700px;overflow:auto;">
+              <table class="client-table" id="twLogsTable">
+                <thead><tr><th>Call SID</th><th>Date</th><th>From</th><th>To</th><th>Direction</th><th>Status</th><th>Duration</th><th>Price</th><th>Account</th><th>Error</th></tr></thead>
+                <tbody id="twLogsBody"></tbody>
+              </table>
+            </div>
           </div>
+          <div id="twCallDetail" style="display:none;margin-top:1.25rem;"></div>
         </div>
 
-        <div class="agent-actions" id="twLogsSection" style="border-left-color: var(--rose);">
-          <h3 style="color: var(--rose);">Call logs <span id="twLogCount" style="font-weight:400;font-size:0.78rem;color:var(--muted);text-transform:none;letter-spacing:0;"></span></h3>
-          <div style="max-height:700px;overflow:auto;">
-            <table class="client-table" id="twLogsTable">
-              <thead><tr><th>Call SID</th><th>Date</th><th>From</th><th>To</th><th>Direction</th><th>Status</th><th>Duration</th><th>Price</th><th>Account</th><th>Error</th></tr></thead>
-              <tbody id="twLogsBody"></tbody>
-            </table>
+        <!-- Twilio Error Logs (Monitor Alerts) -->
+        <div id="twTenantErrors" style="display:none;margin-top:1.25rem;">
+          <div style="background:var(--surface-2);border-radius:12px;padding:1.1rem 1.3rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem;">
+              <div style="font-weight:700;font-size:0.95rem;display:flex;align-items:center;gap:0.4rem;">
+                <span style="font-size:1.1rem;">&#9888;</span> Twilio Error Logs
+                <span id="twTenantName" style="font-size:0.82rem;color:var(--cyan);font-weight:600;"></span>
+              </div>
+              <span id="twTenantErrCount" style="font-size:0.82rem;color:var(--muted);"></span>
+            </div>
+            <div id="twTenantErrLoading" style="text-align:center;padding:1rem;color:var(--muted);display:none;">Fetching Twilio error logs...</div>
+            <div id="twTenantErrCodes" style="display:none;margin-bottom:0.6rem;"></div>
+            <div style="max-height:500px;overflow:auto;">
+              <table class="client-table" id="twTenantErrTable" style="display:none;">
+                <thead><tr><th></th><th>Event</th><th>Product</th><th>Timestamp</th><th>Account</th></tr></thead>
+                <tbody id="twTenantErrBody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
-        <div id="twCallDetail" style="display:none;margin-top:1.25rem;"></div>
       </div>
     </div>
     </div><!-- /twilioView -->
+
+    <!-- Settings View -->
+    <div id="settingsView" class="view-section" style="display:none;">
+      <button type="button" class="back-btn" onclick="showView('homePage')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        Home
+      </button>
+
+      <div class="card" style="margin-bottom:0;">
+        <h2 style="margin-bottom:0.25rem;">Settings</h2>
+        <p class="hint" style="margin-bottom:1.5rem;">Configuration details and connection status for all agents. Sensitive values are masked.</p>
+
+        <div id="settingsLoading" style="text-align:center;padding:2rem;color:var(--muted);">Loading configuration...</div>
+        <div id="settingsContent" style="display:none;"></div>
+        <div id="settingsSaveBar" style="display:none;position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:1rem 0 0;margin-top:1.5rem;text-align:right;">
+          <span id="settingsSaveMsg" style="margin-right:1rem;font-size:0.85rem;"></span>
+          <button type="button" class="btn" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);margin-right:0.5rem;" onclick="resetDefaults()">Reset to Defaults</button>
+          <button type="button" class="btn" id="settingsSaveBtn" onclick="saveSettings()">Save Changes</button>
+          <button type="button" class="btn" id="settingsRestartBtn" style="background:var(--orange);color:#fff;margin-left:0.5rem;" onclick="restartServer()">&#x21bb; Restart Server</button>
+        </div>
+      </div>
+    </div><!-- /settingsView -->
   </div>
 
   <script>
     // --- View router ---
+    var _viewTitles = {
+      homePage: 'Select a tool to get started.',
+      streamServerView: 'Stream Server Alerts',
+      botEngineView: 'Bot Engine Default Logs',
+      twilioView: 'Twilio Log Analysis',
+      settingsView: 'Settings',
+    };
+
     function showView(viewId) {
-      var views = ['homePage', 'streamServerView', 'botEngineView', 'twilioView'];
+      var views = ['homePage', 'streamServerView', 'botEngineView', 'twilioView', 'settingsView'];
       for (var i = 0; i < views.length; i++) {
         var el = document.getElementById(views[i]);
         if (el) el.style.display = views[i] === viewId ? '' : 'none';
       }
-      var hashMap = { streamServerView: '#stream-server', botEngineView: '#bot-engine', twilioView: '#twilio' };
+      var subEl = document.querySelector('.sub');
+      if (subEl) subEl.textContent = _viewTitles[viewId] || '';
+      var hashMap = { streamServerView: '#stream-server', botEngineView: '#bot-engine', twilioView: '#twilio', settingsView: '#settings' };
       if (hashMap[viewId]) {
         history.replaceState(null, '', hashMap[viewId]);
       } else {
         history.replaceState(null, '', window.location.pathname);
       }
+      if (viewId === 'settingsView') loadSettings();
       window.scrollTo(0, 0);
     }
 
@@ -654,6 +762,7 @@
       if (hash === '#stream-server') showView('streamServerView');
       else if (hash === '#bot-engine') showView('botEngineView');
       else if (hash === '#twilio') showView('twilioView');
+      else if (hash === '#settings') showView('settingsView');
     })();
 
     const errorCodesEl = document.getElementById('errorCodes');
@@ -852,185 +961,198 @@
         const rcaSection = document.getElementById('rcaSection');
         if (rca && (rca.rca_summary || rca.rca_details?.length)) {
           rcaSection.style.display = 'block';
+
+          // === Quick Overview Cards ===
           const topTenants = rca.top_tenants || [];
-          const rcaTopEl = document.getElementById('rcaTopTenants');
-          if (topTenants.length) {
-            let html = '<strong>Impacted tenant(s) (' + topTenants.length + '):</strong>';
-            html += '<table class="client-table" style="margin-top:0.4rem;"><thead><tr><th>Tenant</th><th>Namespace</th><th>Total errors</th><th>Error codes</th><th>Twilio errors</th><th>Recent pod restarts</th></tr></thead><tbody>';
-            topTenants.forEach(t => {
-              const codes = (t.error_codes || []).map(c => c.code + ' (' + c.count + ')').join(', ');
-              const ns = t.namespace || '-';
-              const twilioErrCount = t.twilio_error_count || 0;
-              const twilioCell = twilioErrCount > 0
-                ? '<span style="color:#c0392b;font-weight:bold;">' + twilioErrCount + '</span>'
-                : '0';
-              let restartInfo = 'No recent restarts';
-              if (t.restart_detected) {
-                const pods = (t.restart_pods || []).map(p => p.name + ' (age ' + (p.age || '?') + ')').join(', ');
-                restartInfo = '<span style="color:#c0392b;font-weight:bold;">' + t.restart_count + ' pod(s) restarted</span> — ' + pods;
-              }
-              html += '<tr><td>' + (t.tenant_name || '-') + '</td><td>' + ns + '</td><td>' + (t.total_errors ?? 0) + '</td><td>' + (codes || '-') + '</td><td>' + twilioCell + '</td><td>' + restartInfo + '</td></tr>';
-            });
-            html += '</tbody></table>';
-            rcaTopEl.innerHTML = html;
-          } else {
-            rcaTopEl.innerHTML = '';
+          const twilioTotal = rca.twilio_total_calls || 0;
+          const twilioFailedCount = rca.twilio_failed_calls || 0;
+          const beErrorCodes = rca.bot_engine_error_codes || {};
+          const beErrKeys = Object.keys(beErrorCodes);
+          const totalBeErrors = beErrKeys.reduce((s, k) => s + (beErrorCodes[k]||0), 0);
+          const patterns = rca.error_patterns;
+          const totalAnalyzed = patterns ? (patterns.total_analyzed || 0) : 0;
+          const rootCauses = patterns ? (patterns.root_causes || []) : [];
+          const criticalCount = rootCauses.filter(r => r.severity === 'Critical').length;
+
+          function _overviewCard(icon, label, value, color, sub) {
+            return '<div style="background:var(--surface-2);border-radius:12px;padding:1rem;text-align:center;border-top:3px solid ' + color + ';">'
+              + '<div style="font-size:1.6rem;margin-bottom:0.2rem;">' + icon + '</div>'
+              + '<div style="font-size:1.4rem;font-weight:800;color:' + color + ';">' + value + '</div>'
+              + '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem;">' + label + '</div>'
+              + (sub ? '<div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.2rem;">' + sub + '</div>' : '')
+              + '</div>';
           }
-          // --- AI Summary card ---
+
+          let overviewHtml = '';
+          overviewHtml += _overviewCard('&#127959;', 'Impacted Tenants', topTenants.length, topTenants.length > 0 ? 'var(--orange)' : 'var(--success)', '');
+          overviewHtml += _overviewCard('&#128222;', 'Twilio Calls', twilioTotal,
+            twilioFailedCount > 0 ? 'var(--rose)' : 'var(--success)',
+            twilioFailedCount > 0 ? twilioFailedCount + ' failed' : 'All healthy');
+          overviewHtml += _overviewCard('&#129302;', 'Bot Engine Errors', totalBeErrors,
+            totalBeErrors > 0 ? 'var(--rose)' : 'var(--success)',
+            beErrKeys.length > 0 ? beErrKeys.length + ' error code(s)' : 'No errors');
+          overviewHtml += _overviewCard('&#128200;', 'Patterns Found', rootCauses.length,
+            criticalCount > 0 ? 'var(--rose)' : rootCauses.length > 0 ? 'var(--orange)' : 'var(--success)',
+            criticalCount > 0 ? criticalCount + ' critical' : totalAnalyzed + ' logs scanned');
+          document.getElementById('rcaOverviewCards').innerHTML = overviewHtml;
+
+          // === AI Summary ===
           const aiSummaryEl = document.getElementById('rcaAiSummary');
           const aiSummaryBody = document.getElementById('rcaAiSummaryBody');
           const aiText = rca.ai_summary || '';
           if (aiText) {
             const paragraphs = aiText.split(/\n\n+/);
             aiSummaryBody.innerHTML = paragraphs.map(p => {
-              const html = p.trim()
+              const h = p.trim()
                 .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#818cf8">$1</strong>')
                 .replace(/\n/g, '<br>');
-              return '<p style="margin: 0.4rem 0;">' + html + '</p>';
+              return '<p style="margin:0.4rem 0;">' + h + '</p>';
             }).join('');
             aiSummaryEl.style.display = 'block';
           } else {
             aiSummaryEl.style.display = 'none';
           }
-          // --- Bot Engine Analysis as bullet point ---
-          const beErrCodes = rca.bot_engine_error_codes || {};
-          const beErrKeys = Object.keys(beErrCodes);
-          const topTenantNames = (rca.top_tenants || []).map(t => t.tenant_name || '-').join(', ');
-          let botBullet = '';
-          if (beErrKeys.length) {
-            beErrKeys.sort((a, b) => (beErrCodes[b] || 0) - (beErrCodes[a] || 0));
-            const codesStr = beErrKeys.map(c => '<span style="background:#c0392b;color:#fff;padding:0.1rem 0.4rem;border-radius:3px;font-weight:bold;">' + c + ' (' + beErrCodes[c] + 'x)</span>').join(' ');
-            botBullet = '<li><strong>Bot Engine Analysis:</strong> Errors found for impacted tenants (' + topTenantNames + ') — ' + codesStr + '</li>';
-          } else if (topTenantNames) {
-            botBullet = '<li><strong>Bot Engine Analysis:</strong> No errors found in bot engine logs for the impacted tenants (' + topTenantNames + ')</li>';
-          }
-          let twilioBullet = '';
-          const twilioAnalysis = rca.twilio_analysis || '';
-          if (twilioAnalysis && twilioAnalysis !== 'Twilio not configured.') {
-            const isTwilioError = (rca.twilio_failed_calls || 0) > 0;
-            twilioBullet = '<li><strong>Twilio Analysis:</strong> ' + (isTwilioError ? '<span style="color:#c0392b;">' + twilioAnalysis + '</span>' : twilioAnalysis) + '</li>';
-          }
-          let summaryBullet = '';
+
+          // === What Happened (plain-language findings) ===
+          const topTenantNames = topTenants.map(t => t.tenant_name || '-').join(', ');
+          let findings = '';
           const rcaSummaryText = rca.rca_summary || '';
           if (rcaSummaryText) {
-            summaryBullet = '<li><strong>Bot Engine Restarts:</strong> ' + rcaSummaryText + '</li>';
+            findings += '<li style="margin-bottom:0.4rem;"><strong style="color:var(--emerald);">Pod Restarts:</strong> ' + rcaSummaryText + '</li>';
           }
-          const detailsEl = document.getElementById('rcaDetails');
-          detailsEl.innerHTML = summaryBullet + botBullet + twilioBullet;
-          // --- Bot engine error codes by connection_id ---
-          const beConnFindings = rca.bot_engine_conn_findings || [];
-          const beErrorCodes = rca.bot_engine_error_codes || {};
-          const beConnSec = document.getElementById('rcaBotEngineConnSection');
-          const beConnTable = document.getElementById('rcaBotEngineConnTable');
-          const beConnSummary = document.getElementById('rcaBotEngineConnSummary');
-          const beConnBody = document.getElementById('rcaBotEngineConnBody');
-          const beErrorCodesEl = document.getElementById('rcaBotEngineErrorCodes');
-          const errorCodeKeys = Object.keys(beErrorCodes);
-          if (errorCodeKeys.length) {
-            beConnSec.style.display = 'block';
-            let codesHtml = '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;">';
-            errorCodeKeys.sort((a, b) => (beErrorCodes[b] || 0) - (beErrorCodes[a] || 0));
-            errorCodeKeys.forEach(code => {
-              codesHtml += '<span style="background:#c0392b;color:#fff;padding:0.3rem 0.7rem;border-radius:4px;font-weight:bold;font-size:0.95rem;">' + code + ' <small>(' + beErrorCodes[code] + 'x)</small></span>';
+          if (beErrKeys.length) {
+            beErrKeys.sort((a, b) => (beErrorCodes[b]||0) - (beErrorCodes[a]||0));
+            const codesStr = beErrKeys.map(c => '<code style="background:var(--rose);color:#fff;padding:0.1rem 0.45rem;border-radius:4px;font-weight:600;font-size:0.82rem;">' + c + ' (' + beErrorCodes[c] + 'x)</code>').join(' ');
+            findings += '<li style="margin-bottom:0.4rem;"><strong style="color:var(--orange);">Bot Engine:</strong> Errors detected for ' + topTenantNames + ' — ' + codesStr + '</li>';
+          } else if (topTenantNames) {
+            findings += '<li style="margin-bottom:0.4rem;"><strong style="color:var(--success);">Bot Engine:</strong> No errors in bot engine logs for ' + topTenantNames + '</li>';
+          }
+          const twilioAnalysis = rca.twilio_analysis || '';
+          if (twilioAnalysis && twilioAnalysis !== 'Twilio not configured.') {
+            const isTwilioErr = twilioFailedCount > 0;
+            findings += '<li style="margin-bottom:0.4rem;"><strong style="color:' + (isTwilioErr ? 'var(--rose)' : 'var(--success)') + ';">Twilio:</strong> ' + twilioAnalysis + '</li>';
+          }
+          document.getElementById('rcaDetails').innerHTML = findings;
+
+          // === Impacted Tenants Table ===
+          const rcaTopEl = document.getElementById('rcaTopTenants');
+          if (topTenants.length) {
+            let thtml = '<div style="background:var(--surface-2);border-radius:12px;padding:1.1rem 1.3rem;">';
+            thtml += '<div style="font-weight:700;font-size:0.95rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">';
+            thtml += '<span style="font-size:1.1rem;">&#127959;</span> Impacted Tenants <span style="font-size:0.8rem;color:var(--muted);font-weight:400;margin-left:0.3rem;">(' + topTenants.length + ')</span></div>';
+            thtml += '<div style="overflow-x:auto;"><table class="client-table"><thead><tr><th>Tenant</th><th>Namespace</th><th>Errors</th><th>Error Codes</th><th>Twilio</th><th>Pod Restarts</th></tr></thead><tbody>';
+            topTenants.forEach(t => {
+              const codes = (t.error_codes||[]).map(c => '<code style="font-size:0.78rem;">' + c.code + '&times;' + c.count + '</code>').join(' ');
+              const tw = (t.twilio_error_count||0);
+              const twCell = tw > 0 ? '<span style="color:var(--rose);font-weight:700;">' + tw + ' failed</span>' : '<span style="color:var(--success);">OK</span>';
+              let restart = '<span style="color:var(--success);">None</span>';
+              if (t.restart_detected) {
+                restart = '<span style="color:var(--rose);font-weight:700;">' + t.restart_count + ' restart(s)</span>';
+              }
+              thtml += '<tr><td style="font-weight:600;">' + (t.tenant_name||'-') + '</td><td>' + (t.namespace||'-') + '</td><td>' + (t.total_errors??0) + '</td><td>' + (codes||'-') + '</td><td>' + twCell + '</td><td>' + restart + '</td></tr>';
             });
-            codesHtml += '</div>';
-            beErrorCodesEl.innerHTML = codesHtml;
-            beConnSummary.textContent = beConnFindings.length + ' bot engine error(s) found via connection_id lookup.';
-            if (beConnFindings.length) {
-              beConnTable.style.display = 'table';
-              beConnBody.innerHTML = beConnFindings.map(f =>
-                '<tr><td>' + (f.timestamp || '-') + '</td><td style="font-size:0.78rem;">' + (f.connection_id || '-') + '</td><td>' + (f.tenant_name || '-') + '</td><td style="color:#c0392b;font-weight:bold;">' + (f.error_code || '-') + '</td><td>' + (f.event_type || '-') + '</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (f.message || '-') + '</td></tr>'
-              ).join('');
-            } else {
-              beConnTable.style.display = 'none';
-            }
+            thtml += '</tbody></table></div></div>';
+            rcaTopEl.innerHTML = thtml;
           } else {
-            beConnSec.style.display = 'none';
+            rcaTopEl.innerHTML = '';
           }
-          // --- Twilio section ---
+
+          // === Twilio Section ===
           const twilioSec = document.getElementById('rcaTwilioSection');
           const twilioTable = document.getElementById('rcaTwilioTable');
           const twilioSummary = document.getElementById('rcaTwilioSummary');
           const twilioBody = document.getElementById('rcaTwilioBody');
           const twilioFailed = rca.twilio_failed_list || [];
-          const twilioTotal = rca.twilio_total_calls || 0;
-          const twilioFailedCount = rca.twilio_failed_calls || 0;
-          const twilioAccounts = rca.twilio_accounts_checked || [];
           const twilioErrCodes = rca.twilio_error_codes || {};
           const twilioErrCodesEl = document.getElementById('rcaTwilioErrorCodes');
           if (twilioTotal > 0 || twilioFailed.length > 0) {
             twilioSec.style.display = 'block';
-            // Error code badges
             const tErrKeys = Object.keys(twilioErrCodes);
             if (tErrKeys.length) {
-              tErrKeys.sort((a, b) => (twilioErrCodes[b] || 0) - (twilioErrCodes[a] || 0));
-              twilioErrCodesEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;">' + tErrKeys.map(code =>
-                '<span style="background:#c0392b;color:#fff;padding:0.3rem 0.7rem;border-radius:4px;font-weight:bold;font-size:0.95rem;">' + code + ' <small>(' + twilioErrCodes[code] + 'x)</small></span>'
+              tErrKeys.sort((a, b) => (twilioErrCodes[b]||0) - (twilioErrCodes[a]||0));
+              twilioErrCodesEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">' + tErrKeys.map(code =>
+                '<code style="background:var(--rose);color:#fff;padding:0.2rem 0.6rem;border-radius:4px;font-weight:700;">' + code + ' (' + twilioErrCodes[code] + 'x)</code>'
               ).join('') + '</div>';
-            } else {
-              twilioErrCodesEl.innerHTML = '';
-            }
+            } else { twilioErrCodesEl.innerHTML = ''; }
             if (twilioFailedCount > 0) {
-              twilioSummary.innerHTML = '<span style="color:#c0392b;font-weight:bold;">' + twilioFailedCount + ' failed</span> out of ' + twilioTotal + ' calls within the time window.';
+              twilioSummary.innerHTML = '<span style="color:var(--rose);font-weight:700;">' + twilioFailedCount + ' failed</span> out of ' + twilioTotal + ' total calls.';
             } else {
-              twilioSummary.textContent = twilioTotal + ' calls found — all successful. No Twilio issues detected.';
+              twilioSummary.innerHTML = '<span style="color:var(--success);font-weight:600;">' + twilioTotal + ' calls — all successful.</span> No issues detected.';
             }
             if (twilioFailed.length) {
               twilioTable.style.display = 'table';
-              twilioBody.innerHTML = twilioFailed.map(c =>
-                '<tr><td>' + (c.start_time || '-') + '</td><td>' + (c.account || '-') + '</td><td>' + (c.namespace || '-') + '</td><td>' + (c.from || '-') + '</td><td>' + (c.to || '-') + '</td><td>' + (c.direction || '-') + '</td><td style="color:#c0392b;font-weight:bold;">' + (c.status || '-') + '</td><td>' + (c.duration || 0) + 's</td><td style="color:#c0392b;font-weight:bold;">' + (c.error_code || '-') + '</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (c.error_message || '-') + '</td></tr>'
-              ).join('');
-            } else {
-              twilioTable.style.display = 'none';
-            }
-          } else {
-            twilioSec.style.display = 'none';
-          }
-          // --- Error Pattern Analysis ---
-          const patterns = rca.error_patterns;
-          const patSec = document.getElementById('rcaErrorPatterns');
-          if (patterns && patterns.total_analyzed > 0) {
-            patSec.style.display = 'block';
-            document.getElementById('errorPatternSummary').textContent = patterns.total_analyzed + ' error logs analyzed';
+              twilioBody.innerHTML = twilioFailed.map(c => {
+                const statusColor = (c.status||'').match(/fail|busy|no-answer|canceled/) ? 'var(--rose)' : 'var(--success)';
+                return '<tr><td style="white-space:nowrap;">' + (c.start_time||'-') + '</td><td>' + (c.account||'-') + '</td><td>' + (c.from||'-') + '</td><td>' + (c.to||'-') + '</td><td style="color:' + statusColor + ';font-weight:600;">' + (c.status||'-') + '</td><td>' + (c.duration||0) + 's</td><td style="color:var(--rose);font-weight:600;">' + (c.error_code ? c.error_code + ': ' + (c.error_message||'') : '-') + '</td></tr>';
+              }).join('');
+            } else { twilioTable.style.display = 'none'; }
+          } else { twilioSec.style.display = 'none'; }
 
-            // Root Causes — clean cards with "Root Cause" and "How to Fix"
-            const rootCauses = patterns.root_causes || [];
+          // === Bot Engine Errors ===
+          const beConnFindings = rca.bot_engine_conn_findings || [];
+          const beConnSec = document.getElementById('rcaBotEngineConnSection');
+          const beConnTable = document.getElementById('rcaBotEngineConnTable');
+          const beConnSummary = document.getElementById('rcaBotEngineConnSummary');
+          const beConnBody = document.getElementById('rcaBotEngineConnBody');
+          const beErrorCodesEl = document.getElementById('rcaBotEngineErrorCodes');
+          if (beErrKeys.length) {
+            beConnSec.style.display = 'block';
+            beErrKeys.sort((a, b) => (beErrorCodes[b]||0) - (beErrorCodes[a]||0));
+            beErrorCodesEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">' + beErrKeys.map(code =>
+              '<code style="background:var(--rose);color:#fff;padding:0.2rem 0.6rem;border-radius:4px;font-weight:700;font-size:0.88rem;">' + code + ' <small>(' + beErrorCodes[code] + 'x)</small></code>'
+            ).join('') + '</div>';
+            beConnSummary.textContent = beConnFindings.length + ' error(s) found via connection ID lookup.';
+            if (beConnFindings.length) {
+              beConnTable.style.display = 'table';
+              beConnBody.innerHTML = beConnFindings.map(f =>
+                '<tr><td style="white-space:nowrap;">' + (f.timestamp||'-') + '</td><td style="font-size:0.76rem;font-family:monospace;">' + (f.connection_id||'-') + '</td><td>' + (f.tenant_name||'-') + '</td><td style="color:var(--rose);font-weight:700;">' + (f.error_code||'-') + '</td><td>' + (f.event_type||'-') + '</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (f.message||'').replace(/"/g,'&quot;') + '">' + (f.message||'-') + '</td></tr>'
+              ).join('');
+            } else { beConnTable.style.display = 'none'; }
+          } else { beConnSec.style.display = 'none'; }
+
+          // === Error Pattern Analysis ===
+          const patSec = document.getElementById('rcaErrorPatterns');
+          if (patterns && totalAnalyzed > 0) {
+            patSec.style.display = 'block';
+            document.getElementById('errorPatternSummary').textContent = '(' + totalAnalyzed + ' logs, ' + rootCauses.length + ' pattern' + (rootCauses.length !== 1 ? 's' : '') + ')';
             const rcCards = document.getElementById('rootCauseCards');
             if (rootCauses.length) {
-              let rcHtml = '';
+              let rcHtml = '<table style="width:100%;border-collapse:separate;border-spacing:0 0.35rem;font-size:0.85rem;">';
+              rcHtml += '<thead><tr style="font-size:0.75rem;text-transform:uppercase;color:var(--muted);letter-spacing:0.04em;">'
+                + '<th style="text-align:left;padding:0 0.5rem;font-weight:600;">Severity</th>'
+                + '<th style="text-align:left;padding:0 0.5rem;font-weight:600;">Pattern</th>'
+                + '<th style="text-align:right;padding:0 0.5rem;font-weight:600;">Count</th>'
+                + '<th style="text-align:right;padding:0 0.5rem;font-weight:600;">%</th>'
+                + '</tr></thead><tbody>';
               rootCauses.forEach((rc, idx) => {
-                const sevColor = rc.severity === 'Critical' ? '#e74c3c' : rc.severity === 'High' ? '#f1c40f' : rc.severity === 'Medium' ? '#1abc9c' : '#95a5a6';
-                const sevBg = rc.severity === 'Critical' ? 'rgba(231,76,60,0.08)' : rc.severity === 'High' ? 'rgba(241,196,15,0.06)' : 'rgba(26,188,156,0.05)';
-                const sevIcon = rc.severity === 'Critical' ? '&#9888;' : rc.severity === 'High' ? '&#9650;' : '&#9679;';
-                rcHtml += '<div style="background:' + sevBg + ';border-left:4px solid ' + sevColor + ';border-radius:10px;padding:0.9rem 1.1rem;margin-bottom:0.75rem;">';
-                rcHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">';
-                rcHtml += '<span style="font-weight:700;font-size:0.95rem;color:' + sevColor + ';">' + sevIcon + ' ' + rc.category + '</span>';
-                rcHtml += '<span style="font-size:0.78rem;background:' + sevColor + ';color:#000;padding:2px 10px;border-radius:12px;font-weight:600;">' + rc.severity + ' &bull; ' + rc.count + ' errors (' + rc.percentage + '%)</span>';
-                rcHtml += '</div>';
-                rcHtml += '<div style="margin-bottom:0.45rem;"><span style="font-weight:600;font-size:0.85rem;color:var(--text);">Root Cause:</span> <span style="font-size:0.85rem;color:var(--text-dim);">' + rc.description + '</span></div>';
-                rcHtml += '<div><span style="font-weight:600;font-size:0.85rem;color:#2ecc71;">How to Fix:</span> <span style="font-size:0.85rem;color:var(--text-dim);">' + rc.recommendation + '</span></div>';
-                rcHtml += '</div>';
+                const sevColor = rc.severity === 'Critical' ? '#ef4444' : rc.severity === 'High' ? '#f59e0b' : rc.severity === 'Medium' ? '#10b981' : '#6b7280';
+                const barW = Math.max(4, Math.min(100, rc.percentage));
+                rcHtml += '<tr style="cursor:pointer;" onclick="var d=document.getElementById(\'epDetail'+idx+'\');d.style.display=d.style.display===\'none\'?\'table-row\':\'none\';">'
+                  + '<td style="padding:0.5rem;white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + sevColor + ';margin-right:0.4rem;"></span><span style="font-weight:600;color:' + sevColor + ';">' + rc.severity + '</span></td>'
+                  + '<td style="padding:0.5rem;"><div style="font-weight:600;color:var(--text);">' + rc.category + '</div><div style="height:4px;border-radius:2px;background:var(--border);margin-top:0.3rem;"><div style="height:100%;border-radius:2px;background:' + sevColor + ';width:' + barW + '%;"></div></div></td>'
+                  + '<td style="padding:0.5rem;text-align:right;font-weight:700;color:var(--text);">' + rc.count + '</td>'
+                  + '<td style="padding:0.5rem;text-align:right;color:var(--muted);">' + rc.percentage + '%</td>'
+                  + '</tr>';
+                rcHtml += '<tr id="epDetail'+idx+'" style="display:none;"><td colspan="4" style="padding:0.4rem 0.5rem 0.8rem 1.6rem;line-height:1.6;">'
+                  + '<div style="color:var(--text-dim);margin-bottom:0.3rem;"><strong style="color:var(--text);">Cause:</strong> ' + rc.description + '</div>'
+                  + '<div style="color:var(--text-dim);"><strong style="color:#10b981;">Fix:</strong> ' + rc.recommendation + '</div>'
+                  + '</td></tr>';
               });
+              rcHtml += '</tbody></table>';
               rcCards.innerHTML = rcHtml;
-            } else { rcCards.innerHTML = '<p style="font-size:0.85rem;color:var(--text-dim);">No specific root causes identified from the error patterns.</p>'; }
-
-            // Connections — simple list
+            } else { rcCards.innerHTML = '<p style="font-size:0.85rem;color:var(--text-dim);">No patterns identified.</p>'; }
             const conns = patterns.connections || [];
             const connCards = document.getElementById('connectionCards');
             if (conns.length) {
-              let connHtml = '<h4 style="color:var(--teal);margin:0 0 0.5rem;font-size:0.95rem;">Common Connections</h4>';
+              let connHtml = '<div style="font-size:0.82rem;color:var(--muted);font-weight:600;margin-bottom:0.3rem;text-transform:uppercase;letter-spacing:0.04em;">Connections between errors</div>';
+              connHtml += '<ul style="margin:0;padding-left:1.1rem;font-size:0.84rem;color:var(--text-dim);line-height:1.6;">';
               conns.forEach(cn => {
-                connHtml += '<div style="background:rgba(46,204,113,0.05);border-left:4px solid var(--teal);border-radius:10px;padding:0.75rem 1rem;margin-bottom:0.6rem;">';
-                connHtml += '<div style="font-weight:600;font-size:0.9rem;color:var(--teal);margin-bottom:0.3rem;">' + cn.type + '</div>';
-                connHtml += '<div style="font-size:0.85rem;color:var(--text-dim);margin-bottom:0.25rem;">' + cn.description + '</div>';
-                connHtml += '<div style="font-size:0.83rem;color:var(--gold);"><strong>Impact:</strong> ' + cn.impact + '</div>';
-                connHtml += '</div>';
+                connHtml += '<li><strong style="color:var(--teal);">' + cn.type + ':</strong> ' + cn.description + ' <span style="color:var(--gold);">(Impact: ' + cn.impact + ')</span></li>';
               });
+              connHtml += '</ul>';
               connCards.innerHTML = connHtml;
             } else { connCards.innerHTML = ''; }
-          } else {
-            patSec.style.display = 'none';
-          }
+          } else { patSec.style.display = 'none'; }
 
         } else {
           rcaSection.style.display = 'none';
@@ -1065,19 +1187,39 @@
       downloadFile(header + rows, 'opensearch_error_count_by_tenant.csv', 'text/csv');
     });
 
-    document.getElementById('downloadJson').addEventListener('click', () => {
-      if (!lastResult) return;
-      const ctx = lastResult.context || {};
-      const byTenantCode = ctx.opensearch_by_tenant_error_code || [];
-      const byErrorCode = ctx.opensearch_by_error_code || [];
-      const payload = {
-        source: 'OpenSearch',
-        total_error_count: ctx.opensearch_total ?? ctx.error_count ?? 0,
-        error_count_by_tenant_and_code: byTenantCode,
-        error_count_by_code: byErrorCode,
-        exported_at: new Date().toISOString()
-      };
-      downloadFile(JSON.stringify(payload, null, 2), 'opensearch_error_count.json', 'application/json');
+    document.getElementById('downloadLogsJson').addEventListener('click', async () => {
+      const btn = document.getElementById('downloadLogsJson');
+      btn.disabled = true;
+      btn.textContent = 'Fetching logs\u2026';
+      try {
+        const codes = lastResult?.error_codes_used || getSelectedCodes();
+        const timeMins = lastResult?.context?._time_minutes ?? getTimeMinutes();
+        const resp = await fetch('/api/download/error-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ error_codes: codes, time_minutes: timeMins, tenant_filter: tenantFilterEl.value !== 'all' ? tenantFilterEl.value : null, format: 'json' })
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          alert('Failed to fetch logs: ' + (err.error || resp.statusText));
+          return;
+        }
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename=(.+)/);
+        const filename = match ? match[1] : 'opensearch_error_logs.json';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Error downloading logs: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Download error logs (JSON)';
+      }
     });
 
     document.getElementById('downloadLogsCsv').addEventListener('click', async () => {
@@ -1418,13 +1560,77 @@
         .then(function(data) {
           if (!data.ok) throw new Error(data.error || 'Analysis failed');
           var text = data.analysis || '';
-          var paragraphs = text.split(/\n\n+/);
-          beAnalysisBody.innerHTML = paragraphs.map(function(p) {
-            var html = p.trim()
-              .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#818cf8">$1</strong>')
+
+          var sectionMap = {
+            'Session Overview': { icon: '&#128196;', color: 'var(--cyan)', bg: 'rgba(34,211,238,0.06)', border: 'var(--cyan)' },
+            'Issues Found': { icon: '&#9888;', color: 'var(--rose)', bg: 'rgba(251,113,133,0.06)', border: 'var(--rose)' },
+            'Timeline Analysis': { icon: '&#128337;', color: 'var(--amber)', bg: 'rgba(251,191,36,0.06)', border: 'var(--amber)' },
+            'Root Cause': { icon: '&#128269;', color: 'var(--orange)', bg: 'rgba(251,146,60,0.06)', border: 'var(--orange)' },
+            'Verdict': { icon: '&#9989;', color: 'var(--emerald)', bg: 'rgba(52,211,153,0.06)', border: 'var(--emerald)' },
+          };
+
+          var sections = [];
+          var currentTitle = null;
+          var currentLines = [];
+
+          text.split('\n').forEach(function(line) {
+            var m = line.match(/^\*\*(.+?)\*\*\s*(.*)/);
+            if (m && sectionMap[m[1]]) {
+              if (currentTitle) sections.push({ title: currentTitle, body: currentLines.join('\n') });
+              currentTitle = m[1];
+              currentLines = m[2] ? [m[2]] : [];
+            } else {
+              currentLines.push(line);
+            }
+          });
+          if (currentTitle) sections.push({ title: currentTitle, body: currentLines.join('\n') });
+
+          if (sections.length === 0) {
+            sections = [{ title: 'Session Overview', body: text }];
+          }
+
+          var verdictBadge = document.getElementById('beVerdictBadge');
+          verdictBadge.style.display = 'none';
+          var metaEl = document.getElementById('beAnalysisMeta');
+          var _providerNames = {gemini:'Gemini',openai:'ChatGPT',anthropic:'Claude'};
+          var _activeProv = (document.querySelector('[data-env="LLM_PROVIDER"]')||{}).value || 'gemini';
+          metaEl.textContent = 'Powered by ' + (_providerNames[_activeProv]||'AI') + ' \u2022 ' + new Date().toLocaleTimeString();
+
+          var html = '';
+          sections.forEach(function(sec) {
+            var cfg = sectionMap[sec.title] || { icon: '&#128196;', color: 'var(--muted)', bg: 'var(--surface-2)', border: 'var(--border)' };
+            var bodyHtml = sec.body.trim()
+              .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text)">$1</strong>')
+              .replace(/`([^`]+)`/g, '<code style="background:var(--surface-3);padding:0.1rem 0.35rem;border-radius:4px;font-size:0.8rem;color:var(--cyan);">$1</code>')
+              .replace(/\n- /g, '\n\u2022 ')
+              .replace(/\n(\d+)\. /g, '\n<strong style="color:var(--accent-light)">$1.</strong> ')
+              .replace(/CRITICAL/g, '<span style="color:var(--rose);font-weight:700;">CRITICAL</span>')
+              .replace(/WARNING/g, '<span style="color:var(--amber);font-weight:700;">WARNING</span>')
+              .replace(/SUCCESS/g, '<span style="color:var(--success);font-weight:700;">SUCCESS</span>')
+              .replace(/FAILURE/g, '<span style="color:var(--rose);font-weight:700;">FAILURE</span>')
+              .replace(/HIGH/g, '<span style="background:var(--emerald-dim);color:var(--emerald);padding:0.1rem 0.4rem;border-radius:4px;font-size:0.78rem;font-weight:600;">HIGH</span>')
+              .replace(/MEDIUM/g, '<span style="background:var(--amber-dim);color:var(--amber);padding:0.1rem 0.4rem;border-radius:4px;font-size:0.78rem;font-weight:600;">MEDIUM</span>')
+              .replace(/LOW/g, '<span style="background:var(--rose-dim);color:var(--rose);padding:0.1rem 0.4rem;border-radius:4px;font-size:0.78rem;font-weight:600;">LOW</span>')
               .replace(/\n/g, '<br>');
-            return '<p style="margin: 0.4rem 0;">' + html + '</p>';
-          }).join('');
+
+            html += '<div style="background:' + cfg.bg + ';border-left:3px solid ' + cfg.border + ';border-radius:8px;padding:0.9rem 1.1rem;margin-bottom:0.75rem;">'
+              + '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">'
+              + '<span style="font-size:1.1rem;">' + cfg.icon + '</span>'
+              + '<span style="font-weight:700;font-size:0.88rem;color:' + cfg.color + ';text-transform:uppercase;letter-spacing:0.05em;">' + sec.title + '</span>'
+              + '</div>'
+              + '<div style="font-size:0.88rem;line-height:1.7;color:var(--text);">' + bodyHtml + '</div>'
+              + '</div>';
+
+            if (sec.title === 'Verdict') {
+              var isSuccess = /SUCCESS/i.test(sec.body);
+              verdictBadge.style.display = '';
+              verdictBadge.textContent = isSuccess ? 'PASSED' : 'FAILED';
+              verdictBadge.style.background = isSuccess ? 'var(--emerald-dim)' : 'var(--rose-dim)';
+              verdictBadge.style.color = isSuccess ? 'var(--emerald)' : 'var(--rose)';
+            }
+          });
+
+          beAnalysisBody.innerHTML = html;
           beAnalysisResult.style.display = 'block';
           beAnalysisResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
         })
@@ -1449,6 +1655,8 @@
       var twResultEl = document.getElementById('twilioResult');
       var twFromInput = document.getElementById('twFromNumber');
       var twTimeSelect = document.getElementById('twTimeFilter');
+      var twTenantSelect = document.getElementById('twTenantSelect');
+      var twLogTypeSelect = document.getElementById('twLogType');
       var lastPayload = null;
 
       fetch('/api/twilio/status').then(function(r) { return r.json(); }).then(function(d) {
@@ -1462,20 +1670,118 @@
         twStatusEl.innerHTML = '<span style="color:var(--danger);">&#9679;</span> <span class="hint">Could not check Twilio status</span>';
       });
 
+      // Populate tenant dropdown
+      fetch('/api/tenants').then(function(r) { return r.json(); }).then(function(d) {
+        if (d.ok && d.tenants && d.tenants.length) {
+          d.tenants.sort();
+          d.tenants.forEach(function(t) {
+            var opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t;
+            twTenantSelect.appendChild(opt);
+          });
+        }
+      }).catch(function() {});
+
+      function _fetchTwilioErrorLogs(tenant, timeMins) {
+        var section = document.getElementById('twTenantErrors');
+        section.style.display = 'block';
+        document.getElementById('twTenantName').textContent = tenant;
+        document.getElementById('twTenantErrLoading').style.display = 'block';
+        document.getElementById('twTenantErrCodes').style.display = 'none';
+        document.getElementById('twTenantErrTable').style.display = 'none';
+        document.getElementById('twTenantErrCount').textContent = '';
+
+        fetch('/api/twilio/error-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant: tenant, time_minutes: timeMins })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          document.getElementById('twTenantErrLoading').style.display = 'none';
+          if (!d.ok) {
+            document.getElementById('twTenantErrCodes').style.display = 'block';
+            document.getElementById('twTenantErrCodes').innerHTML = '<div style="color:var(--rose);font-size:0.85rem;">Error: ' + (d.error || 'unknown') + '</div>';
+            return;
+          }
+          var alerts = d.alerts || [];
+          var errCodes = d.error_codes || {};
+          document.getElementById('twTenantErrCount').textContent = d.total + ' error(s)';
+
+          var codeKeys = Object.keys(errCodes);
+          var codesEl = document.getElementById('twTenantErrCodes');
+          if (codeKeys.length) {
+            codeKeys.sort(function(a, b) { return (errCodes[b]||0) - (errCodes[a]||0); });
+            codesEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">' + codeKeys.map(function(code) {
+              return '<code style="background:var(--rose);color:#fff;padding:0.2rem 0.6rem;border-radius:4px;font-weight:700;font-size:0.82rem;">' + code + ' (' + errCodes[code] + 'x)</code>';
+            }).join('') + '</div>';
+            codesEl.style.display = 'block';
+          } else {
+            codesEl.innerHTML = '<div style="color:var(--success);font-weight:600;font-size:0.85rem;">No Twilio errors found for this tenant in the selected time window.</div>';
+            codesEl.style.display = 'block';
+          }
+
+          if (alerts.length) {
+            var tbody = document.getElementById('twTenantErrBody');
+            tbody.innerHTML = alerts.map(function(a) {
+              var icon = a.log_level === 'warning' ? '<span style="color:var(--orange);font-size:1rem;">&#9650;</span>' : '<span style="color:var(--rose);font-size:0.9rem;">&#9670;</span>';
+              var eventText = a.error_code ? a.error_code + ' - ' + (a.description || a.alert_text || '') : (a.alert_text || '-');
+              return '<tr>'
+                + '<td style="text-align:center;width:30px;">' + icon + '</td>'
+                + '<td style="font-size:0.85rem;">' + eventText + '</td>'
+                + '<td style="font-size:0.82rem;color:var(--muted);">' + (a.product || 'Programmable Voice') + '</td>'
+                + '<td style="font-size:0.82rem;white-space:nowrap;">' + (a.date_created || '-') + '</td>'
+                + '<td style="font-size:0.82rem;">' + (a.account || '-') + '</td>'
+                + '</tr>';
+            }).join('');
+            document.getElementById('twTenantErrTable').style.display = 'table';
+          }
+        })
+        .catch(function(e) {
+          document.getElementById('twTenantErrLoading').style.display = 'none';
+          document.getElementById('twTenantErrCodes').style.display = 'block';
+          document.getElementById('twTenantErrCodes').innerHTML = '<div style="color:var(--rose);font-size:0.85rem;">Failed: ' + e.message + '</div>';
+        });
+      }
+
       twFetchBtn.addEventListener('click', function() {
         var fromNum = twFromInput.value.trim();
+        var selectedTenant = twTenantSelect.value;
+        var logType = twLogTypeSelect.value;
         twApiErr.style.display = 'none';
         twResultEl.style.display = 'none';
         twDownloadBtn.style.display = 'none';
         twDownloadJsonBtn.style.display = 'none';
+        document.getElementById('twTenantErrors').style.display = 'none';
+        document.getElementById('twCallSection').style.display = 'none';
 
-        if (!fromNum) {
-          twApiErr.textContent = 'Please enter a From number';
+        if (!fromNum && !selectedTenant) {
+          twApiErr.textContent = 'Please enter a From number or select a Tenant (or both)';
           twApiErr.style.display = 'block';
           return;
         }
 
-        lastPayload = { from_number: fromNum, time_minutes: parseInt(twTimeSelect.value, 10) || 60 };
+        var timeMins = parseInt(twTimeSelect.value, 10) || 60;
+        var needCalls = logType === 'call_logs' || logType === 'both' || fromNum;
+        var needErrors = (logType === 'error_logs' || logType === 'both') && selectedTenant;
+
+        // Error logs only (no call logs)
+        if (!needCalls && needErrors) {
+          twFetchBtn.disabled = true;
+          twFetchBtn.textContent = 'Fetching...';
+          lastPayload = { tenant: selectedTenant, time_minutes: timeMins };
+          twResultEl.style.display = 'block';
+          _fetchTwilioErrorLogs(selectedTenant, timeMins);
+          twFetchBtn.disabled = false;
+          twFetchBtn.textContent = 'Fetch Logs';
+          return;
+        }
+
+        lastPayload = { time_minutes: timeMins };
+        if (fromNum) lastPayload.from_number = fromNum;
+        if (selectedTenant) lastPayload.tenant = selectedTenant;
+
         twFetchBtn.disabled = true;
         twFetchBtn.textContent = 'Fetching...';
 
@@ -1492,6 +1798,7 @@
           if (!data.ok) { throw new Error(data.error || 'Unknown error'); }
 
           var calls = data.calls || [];
+          document.getElementById('twCallSection').style.display = 'block';
           document.getElementById('twTotalCount').textContent = Number(data.total || 0).toLocaleString();
           document.getElementById('twFailedCount').textContent = Number(data.failed_calls || 0).toLocaleString();
           document.getElementById('twLogCount').textContent = '(' + calls.length + ' calls)';
@@ -1574,6 +1881,13 @@
           twResultEl.style.display = 'block';
           twDownloadBtn.style.display = '';
           twDownloadJsonBtn.style.display = '';
+
+          // Fetch Twilio error logs if tenant selected and type includes errors
+          if (selectedTenant && needErrors) {
+            _fetchTwilioErrorLogs(selectedTenant, timeMins);
+          } else {
+            document.getElementById('twTenantErrors').style.display = 'none';
+          }
         })
         .catch(function(e) {
           twApiErr.textContent = 'Error: ' + (e.message || e);
@@ -1596,7 +1910,7 @@
         fetch('/api/download/twilio-logs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from_number: lastPayload.from_number, time_minutes: lastPayload.time_minutes, format: format })
+          body: JSON.stringify({ from_number: lastPayload.from_number || '', tenant: lastPayload.tenant || '', time_minutes: lastPayload.time_minutes, format: format })
         })
         .then(function(resp) {
           if (!resp.ok) return resp.json().then(function(e) { throw new Error(e.error || resp.statusText); });
@@ -1666,6 +1980,340 @@
         slackBtn.innerHTML = '<span style="margin-right:0.4rem;">&#128172;</span> Send to Slack';
       });
     });
+
+    // --- Settings ---
+    var _settingsLoaded = false;
+    var _settingsInputStyle = 'width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:JetBrains Mono,monospace;font-size:0.78rem;outline:none;';
+    var _settingsSelectStyle = 'width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-size:0.82rem;outline:none;cursor:pointer;';
+
+    function loadSettings() {
+      if (_settingsLoaded) return;
+      var loadingEl = document.getElementById('settingsLoading');
+      var contentEl = document.getElementById('settingsContent');
+      var saveBar = document.getElementById('settingsSaveBar');
+
+      Promise.all([
+        fetch('/api/settings').then(function(r) { return r.json(); }),
+        fetch('/api/opensearch/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
+        fetch('/api/twilio/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
+        fetch('/api/k8s/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
+        fetch('/api/slack/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
+        fetch('/api/bot-engine/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
+      ]).then(function(results) {
+        var cfg = results[0];
+        var osStatus = results[1];
+        var twStatus = results[2];
+        var k8sStatus = results[3];
+        var slkStatus = results[4];
+        var beStatus = results[5];
+
+        function statusDot(connected, notConfigured) {
+          if (notConfigured) return '<span style="color:var(--muted);font-weight:600;">&#9679; Not configured</span>';
+          var color = connected ? 'var(--success)' : 'var(--rose)';
+          var label = connected ? 'Connected' : 'Disconnected';
+          return '<span style="color:' + color + ';font-weight:600;">&#9679; ' + label + '</span>';
+        }
+
+        function inp(envKey, val, opts) {
+          opts = opts || {};
+          var type = opts.type || 'text';
+          var ph = opts.placeholder || '';
+          var v = (val && val !== '(not set)') ? val : '';
+          if (opts.masked && v.indexOf('***') !== -1) v = '';
+          return '<input type="' + type + '" data-env="' + envKey + '" value="' + v.replace(/"/g, '&quot;') + '" placeholder="' + ph + '" style="' + _settingsInputStyle + '">';
+        }
+
+        function sel(envKey, val, options) {
+          var h = '<select data-env="' + envKey + '" style="' + _settingsSelectStyle + '">';
+          options.forEach(function(opt) {
+            var optVal = typeof opt === 'object' ? opt.value : opt;
+            var optLabel = typeof opt === 'object' ? opt.label : opt;
+            var selected = (String(val) === String(optVal)) ? ' selected' : '';
+            h += '<option value="' + optVal + '"' + selected + '>' + optLabel + '</option>';
+          });
+          h += '</select>';
+          return h;
+        }
+
+        function row(label, inputHtml, opts) {
+          opts = opts || {};
+          var hint = opts.hint ? '<div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem;">' + opts.hint + '</div>' : '';
+          return '<tr>'
+            + '<td style="padding:0.5rem 0.75rem 0.5rem 0;color:var(--muted);white-space:nowrap;vertical-align:middle;width:38%;font-size:0.82rem;">' + label + '</td>'
+            + '<td style="padding:0.35rem 0;">' + inputHtml + hint + '</td>'
+            + '</tr>';
+        }
+
+        function readonlyRow(label, val) {
+          var style = (!val || val === '(not set)') ? 'color:var(--muted);font-style:italic;' : '';
+          return '<tr>'
+            + '<td style="padding:0.5rem 0.75rem 0.5rem 0;color:var(--muted);white-space:nowrap;vertical-align:middle;width:38%;font-size:0.82rem;">' + label + '</td>'
+            + '<td style="padding:0.35rem 0;font-family:JetBrains Mono,monospace;font-size:0.78rem;' + style + '">' + (val || '(not set)') + '</td>'
+            + '</tr>';
+        }
+
+        function section(title, icon, statusHtml, rows) {
+          return '<div style="background:var(--surface-2);border-radius:12px;padding:1.25rem;margin-bottom:1rem;">'
+            + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">'
+            + '<h3 style="margin:0;font-size:1rem;">' + icon + ' ' + title + '</h3>'
+            + '<div style="font-size:0.82rem;">' + statusHtml + '</div>'
+            + '</div>'
+            + '<table style="width:100%;border-collapse:collapse;">' + rows + '</table>'
+            + '</div>';
+        }
+
+        var ss = cfg.stream_server || {};
+        var be = cfg.bot_engine || {};
+        var tw = cfg.twilio || {};
+        var llm = cfg.llm || {};
+        var k8s = cfg.kubernetes || {};
+
+        var html = '';
+
+        // Stream Server
+        html += section('Stream Server Alerts', '&#9889;', statusDot(osStatus.connected),
+          row('OpenSearch URL', inp('OPENSEARCH_URL', ss.opensearch_url, {placeholder:'https://...'}))
+          + row('Index Pattern', inp('OPENSEARCH_INDEX', ss.opensearch_index, {placeholder:'stream-*'}))
+          + row('User', inp('OPENSEARCH_USER', ss.opensearch_user, {placeholder:'username'}))
+          + row('Password', inp('OPENSEARCH_PASSWORD', ss.opensearch_password, {type:'password', masked:true, placeholder:'Enter to change'}), {hint:'Leave blank to keep current'})
+          + row('Time Field', inp('OPENSEARCH_TIME_FIELD', ss.time_field, {placeholder:'@timestamp'}))
+          + row('Error Code Field', inp('OPENSEARCH_ERROR_CODE_FIELD', ss.error_code_field))
+          + row('Error Name Field', inp('OPENSEARCH_ERROR_NAME_FIELD', ss.error_name_field))
+          + row('Error Stack Field', inp('OPENSEARCH_ERROR_STACK_FIELD', ss.error_stack_field))
+          + row('Level Field', inp('OPENSEARCH_LEVEL_FIELD', ss.level_field))
+          + row('Level Value', inp('OPENSEARCH_LEVEL_VALUE', ss.level_value, {placeholder:'50'}))
+          + row('K8s Version Prefix', inp('OPENSEARCH_K8S_VERSION_PREFIX', ss.k8s_version_prefix, {placeholder:'v5'}))
+          + row('Exclude Stacks', inp('OPENSEARCH_EXCLUDE_ERROR_STACK', ss.exclude_error_stack, {placeholder:'pipe|separated'}), {hint:'Pipe-separated patterns'})
+          + row('SSL Verify', sel('OPENSEARCH_VERIFY_SSL', ss.verify_ssl ? '1' : '0', [{value:'1',label:'Yes'},{value:'0',label:'No'}]))
+        );
+
+        // Slack
+        html += section('Slack Integration', '&#128172;', statusDot(slkStatus.connected),
+          row('Enabled', sel('SLACK_ENABLED', ss.slack_enabled ? 'true' : 'false', [{value:'true',label:'Yes'},{value:'false',label:'No'}]))
+          + row('Channel', inp('SLACK_CHANNEL', ss.slack_channel, {placeholder:'#channel-name'}))
+          + row('Bot Token', inp('SLACK_BOT_TOKEN', ss.slack_bot_token, {type:'password', masked:true, placeholder:'xoxb-...'}), {hint:'Leave blank to keep current'})
+          + row('App Token', inp('SLACK_APP_TOKEN', ss.slack_app_token, {type:'password', masked:true, placeholder:'xapp-...'}), {hint:'Leave blank to keep current'})
+          + row('Listener Enabled', sel('SLACK_LISTENER_ENABLED', ss.slack_listener_enabled ? 'true' : 'false', [{value:'true',label:'Yes'},{value:'false',label:'No'}]))
+          + row('Alert Keywords', inp('SLACK_ALERT_KEYWORDS', ss.slack_alert_keywords, {placeholder:'alert,error,stream'}))
+          + row('Alert Time Window', sel('SLACK_ALERT_TIME_MINUTES', ss.slack_alert_time_minutes, [{value:'5',label:'5 min'},{value:'10',label:'10 min'},{value:'15',label:'15 min'},{value:'30',label:'30 min'},{value:'60',label:'60 min'}]))
+          + row('Error Threshold', sel('SLACK_ERROR_THRESHOLD', ss.slack_error_threshold, [{value:'10',label:'10'},{value:'20',label:'20'},{value:'30',label:'30'},{value:'50',label:'50'},{value:'100',label:'100'}]))
+        );
+
+        // Bot Engine
+        html += section('Bot Engine Default Logs', '&#128269;', statusDot(beStatus.connected),
+          readonlyRow('OpenSearch URL', be.opensearch_url)
+          + row('Bot Engine Index', inp('OPENSEARCH_BOT_ENGINE_INDEX', be.bot_engine_index, {placeholder:'bot-engine.default-*'}))
+          + row('Conversation Index', inp('OPENSEARCH_CONVERSATION_INDEX', be.conversation_index, {placeholder:'conversation-*'}))
+          + row('Context Field', inp('OPENSEARCH_BOT_ENGINE_CONTEXT_FIELD', be.context_field))
+          + readonlyRow('Time Field', be.time_field)
+          + readonlyRow('User', be.opensearch_user)
+          + readonlyRow('Password', be.opensearch_password)
+        );
+
+        // Twilio
+        var subInfo = twStatus.subaccounts ? twStatus.subaccounts.length + ' subaccount(s)' : 'N/A';
+        html += section('Twilio Log Analysis', '&#128222;', statusDot(twStatus.connected),
+          row('Account SID', inp('TWILIO_ACCOUNT_SID', tw.account_sid, {type:'password', masked:true, placeholder:'AC...'}), {hint:'Leave blank to keep current'})
+          + row('Auth Token', inp('TWILIO_AUTH_TOKEN', tw.auth_token, {type:'password', masked:true, placeholder:'Enter to change'}), {hint:'Leave blank to keep current'})
+          + row('Exclude Subaccounts', inp('TWILIO_EXCLUDE_SUBACCOUNTS', tw.exclude_subaccounts, {placeholder:'Name1,Name2'}), {hint:'Comma-separated'})
+          + row('Extra Accounts', inp('TWILIO_EXTRA_ACCOUNTS', tw.extra_accounts, {type:'password', masked:true, placeholder:'SID:Token'}), {hint:'Leave blank to keep current'})
+          + row('Workers', sel('TWILIO_WORKERS', tw.workers, [{value:'10',label:'10'},{value:'25',label:'25'},{value:'50',label:'50'},{value:'100',label:'100'},{value:'200',label:'200'}]))
+          + readonlyRow('Subaccounts', subInfo)
+        );
+
+        // Kubernetes
+        html += section('Kubernetes (Lens)', '&#9781;', statusDot(k8sStatus.connected, !k8sStatus.connected),
+          row('Pod Filter', inp('KUBE_POD_FILTER', k8s.pod_filter, {placeholder:'bot-engine'}))
+          + row('Label Selector', inp('KUBE_LABEL_SELECTOR', k8s.label_selector, {placeholder:'app=bot-engine'}))
+          + row('Namespace', inp('KUBE_NAMESPACE', k8s.namespace === '(default)' ? '' : k8s.namespace, {placeholder:'(all namespaces)'}))
+        );
+
+        // LLM
+        var activeProvider = llm.llm_provider || 'auto';
+        var geminiSet = llm.gemini_api_key && llm.gemini_api_key !== '(not set)';
+        var openaiSet = llm.openai_api_key && llm.openai_api_key !== '(not set)';
+        var anthropicSet = llm.anthropic_api_key && llm.anthropic_api_key !== '(not set)';
+        var llmOk = (activeProvider === 'gemini' && geminiSet)
+          || (activeProvider === 'openai' && openaiSet)
+          || (activeProvider === 'anthropic' && anthropicSet)
+          || (activeProvider === 'auto' && (geminiSet || openaiSet || anthropicSet));
+        html += section('AI / LLM Configuration', '&#129302;', llmOk ? statusDot(true) : statusDot(false, true),
+          row('Provider', sel('LLM_PROVIDER', activeProvider, [
+            {value:'gemini',label:'Google Gemini (free tier)'},
+            {value:'openai',label:'OpenAI / ChatGPT'},
+            {value:'anthropic',label:'Anthropic Claude'},
+            {value:'auto',label:'Auto-detect'},
+          ]))
+          + '<tr><td colspan="2" style="padding:0.75rem 0 0.25rem;"><strong style="font-size:0.85rem;color:var(--cyan);">Google Gemini</strong></td></tr>'
+          + row('Gemini API Key', inp('GEMINI_API_KEY', llm.gemini_api_key, {type:'password', masked:true, placeholder:'AIza...'}), {hint:'Get free key at ai.google.dev'})
+          + row('Gemini Model', sel('GEMINI_MODEL', llm.gemini_model, [
+            {value:'gemini-2.5-flash',label:'Gemini 2.5 Flash (recommended, free)'},
+            {value:'gemini-2.5-pro',label:'Gemini 2.5 Pro'},
+            {value:'gemini-2.0-flash',label:'Gemini 2.0 Flash'},
+            {value:'gemini-2.0-flash-lite',label:'Gemini 2.0 Flash Lite'},
+          ]))
+          + '<tr><td colspan="2" style="padding:0.75rem 0 0.25rem;"><strong style="font-size:0.85rem;color:var(--green);">OpenAI / ChatGPT</strong></td></tr>'
+          + row('OpenAI API Key', inp('OPENAI_API_KEY', llm.openai_api_key, {type:'password', masked:true, placeholder:'sk-proj-...'}), {hint:'Get key at platform.openai.com/api-keys'})
+          + row('OpenAI Model', sel('OPENAI_MODEL', llm.openai_model, [
+            {value:'gpt-4o-mini',label:'GPT-4o Mini (fast, cheap)'},
+            {value:'gpt-4o',label:'GPT-4o'},
+            {value:'gpt-4-turbo',label:'GPT-4 Turbo'},
+            {value:'gpt-3.5-turbo',label:'GPT-3.5 Turbo'},
+            {value:'o3-mini',label:'o3-mini (reasoning)'},
+          ]))
+          + '<tr><td colspan="2" style="padding:0.75rem 0 0.25rem;"><strong style="font-size:0.85rem;color:var(--orange);">Anthropic Claude</strong></td></tr>'
+          + row('Anthropic API Key', inp('ANTHROPIC_API_KEY', llm.anthropic_api_key, {type:'password', masked:true, placeholder:'sk-ant-...'}), {hint:'Leave blank to keep current'})
+          + row('Anthropic Model', sel('ANTHROPIC_MODEL', llm.anthropic_model, [
+            {value:'claude-sonnet-4-20250514',label:'Claude Sonnet 4'},
+            {value:'claude-3-5-sonnet-20241022',label:'Claude 3.5 Sonnet'},
+            {value:'claude-3-haiku-20240307',label:'Claude 3 Haiku'},
+            {value:'claude-3-opus-20240229',label:'Claude 3 Opus'},
+          ]))
+        );
+
+        loadingEl.style.display = 'none';
+        contentEl.style.display = '';
+        contentEl.innerHTML = html;
+        saveBar.style.display = '';
+        _settingsLoaded = true;
+      }).catch(function(e) {
+        loadingEl.textContent = 'Failed to load settings: ' + e.message;
+        loadingEl.style.color = 'var(--rose)';
+      });
+    }
+
+    var _defaultSettings = {
+      OPENSEARCH_URL: 'https://app-opensearch-prod.interface.ai',
+      OPENSEARCH_INDEX: 'default.stream-server.*',
+      OPENSEARCH_TIME_FIELD: '@timestamp',
+      OPENSEARCH_ERROR_CODE_FIELD: 'error_code',
+      OPENSEARCH_ERROR_NAME_FIELD: 'rawLog.data.error.name',
+      OPENSEARCH_ERROR_STACK_FIELD: 'rawLog.data.error.stack',
+      OPENSEARCH_LEVEL_FIELD: 'level',
+      OPENSEARCH_LEVEL_VALUE: '50',
+      OPENSEARCH_K8S_VERSION_PREFIX: 'v5',
+      OPENSEARCH_EXCLUDE_ERROR_STACK: 'SpeechmaticsRealtimeError: Timed out after 10000ms waiting|InvalidSsmlException: Invalid SSML request',
+      OPENSEARCH_VERIFY_SSL: '1',
+      OPENSEARCH_USER: 'app-platform',
+      OPENSEARCH_PASSWORD: '',
+      OPENSEARCH_BOT_ENGINE_INDEX: 'bot-engine.default-*',
+      OPENSEARCH_CONVERSATION_INDEX: 'conversation-*',
+      OPENSEARCH_BOT_ENGINE_CONTEXT_FIELD: 'rawLog.data.event.request.meta.contextId',
+      SLACK_ENABLED: 'true',
+      SLACK_CHANNEL: '#stream-server-alerts-triage-agent',
+      SLACK_BOT_TOKEN: '',
+      SLACK_APP_TOKEN: '',
+      SLACK_LISTENER_ENABLED: 'true',
+      SLACK_ALERT_KEYWORDS: 'alert,error,stream,incident,outage,failure,down',
+      SLACK_ALERT_TIME_MINUTES: '15',
+      SLACK_ERROR_THRESHOLD: '30',
+      TWILIO_ACCOUNT_SID: '',
+      TWILIO_AUTH_TOKEN: '',
+      TWILIO_EXCLUDE_SUBACCOUNTS: 'GoAlert,TestAccount,Dupaco CU',
+      TWILIO_EXTRA_ACCOUNTS: '',
+      TWILIO_WORKERS: '100',
+      LLM_PROVIDER: 'gemini',
+      GEMINI_API_KEY: '',
+      GEMINI_MODEL: 'gemini-2.5-flash',
+      OPENAI_API_KEY: '',
+      OPENAI_MODEL: 'gpt-4o-mini',
+      ANTHROPIC_API_KEY: '',
+      ANTHROPIC_MODEL: 'claude-sonnet-4-20250514',
+      KUBE_POD_FILTER: 'bot-engine',
+      KUBE_LABEL_SELECTOR: 'app=bot-engine',
+      KUBE_NAMESPACE: '',
+    };
+
+    function restartServer() {
+      var btn = document.getElementById('settingsRestartBtn');
+      var msg = document.getElementById('settingsSaveMsg');
+      btn.disabled = true;
+      btn.textContent = 'Restarting...';
+      msg.style.color = 'var(--orange)';
+      msg.textContent = 'Restarting server...';
+      fetch('/api/restart', { method: 'POST' }).catch(function(){});
+      var attempts = 0;
+      var poll = setInterval(function() {
+        attempts++;
+        fetch('/api/health').then(function(r) { return r.json(); }).then(function(d) {
+          if (d.ok) {
+            clearInterval(poll);
+            msg.style.color = 'var(--success)';
+            msg.textContent = 'Server restarted successfully.';
+            btn.disabled = false;
+            btn.innerHTML = '&#x21bb; Restart Server';
+            _settingsLoaded = false;
+            loadSettings();
+          }
+        }).catch(function(){});
+        if (attempts > 20) {
+          clearInterval(poll);
+          msg.style.color = 'var(--rose)';
+          msg.textContent = 'Server did not come back. Refresh the page manually.';
+          btn.disabled = false;
+          btn.innerHTML = '&#x21bb; Restart Server';
+        }
+      }, 1500);
+    }
+
+    function resetDefaults() {
+      if (!confirm('Reset ALL settings to defaults? API keys and passwords will be cleared. You will need to re-enter them.\n\nContinue?')) return;
+      var inputs = document.querySelectorAll('#settingsContent [data-env]');
+      inputs.forEach(function(el) {
+        var key = el.getAttribute('data-env');
+        if (key in _defaultSettings) {
+          el.value = _defaultSettings[key];
+          el.style.outline = '2px solid var(--accent)';
+          setTimeout(function() { el.style.outline = ''; }, 1500);
+        }
+      });
+      var msg = document.getElementById('settingsSaveMsg');
+      msg.style.color = 'var(--accent)';
+      msg.textContent = 'Defaults loaded into form. Click "Save Changes" to apply.';
+    }
+
+    function saveSettings() {
+      var inputs = document.querySelectorAll('#settingsContent [data-env]');
+      var payload = {};
+      inputs.forEach(function(el) {
+        var key = el.getAttribute('data-env');
+        var val = el.value.trim();
+        if (el.type === 'password' && val === '') return;
+        payload[key] = val;
+      });
+
+      var btn = document.getElementById('settingsSaveBtn');
+      var msg = document.getElementById('settingsSaveMsg');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      msg.textContent = '';
+
+      fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) {
+          msg.style.color = 'var(--success)';
+          msg.textContent = 'Saved ' + (d.saved || []).length + ' setting(s). Restart server to apply some changes.';
+          _settingsLoaded = false;
+          setTimeout(function() { _settingsLoaded = false; loadSettings(); }, 1500);
+        } else {
+          msg.style.color = 'var(--rose)';
+          msg.textContent = 'Error: ' + (d.error || 'unknown');
+        }
+      })
+      .catch(function(e) {
+        msg.style.color = 'var(--rose)';
+        msg.textContent = 'Network error: ' + e.message;
+      })
+      .finally(function() {
+        btn.disabled = false;
+        btn.textContent = 'Save Changes';
+      });
+    }
 
   </script>
 </body>

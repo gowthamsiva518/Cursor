@@ -1,13 +1,14 @@
 """
-AI-powered RCA summarizer using Anthropic Claude.
-
-Takes the raw RCA dict produced by generate_rca() and returns a concise,
-executive-style summary covering Impact, Root Cause, Evidence, and
-Recommendations.
+AI-powered RCA summarizer supporting Google Gemini, OpenAI ChatGPT, and Anthropic Claude.
 
 Configure via environment:
-  ANTHROPIC_API_KEY  - Anthropic API key (required)
-  ANTHROPIC_MODEL    - Model to use (default: claude-sonnet-4-20250514)
+  LLM_PROVIDER       - Force provider: "gemini", "openai", or "anthropic" (default: auto-detect)
+  GEMINI_API_KEY     - Google Gemini API key
+  GEMINI_MODEL       - Gemini model (default: gemini-2.5-flash)
+  OPENAI_API_KEY     - OpenAI API key
+  OPENAI_MODEL       - OpenAI model (default: gpt-4o-mini)
+  ANTHROPIC_API_KEY  - Anthropic API key
+  ANTHROPIC_MODEL    - Anthropic model (default: claude-sonnet-4-20250514)
 """
 
 from __future__ import annotations
@@ -17,21 +18,110 @@ import os
 from typing import Any
 
 
+def _get_provider() -> str:
+    """Determine which LLM provider to use."""
+    forced = os.environ.get("LLM_PROVIDER", "").strip().lower()
+    if forced in ("gemini", "openai", "anthropic"):
+        return forced
+    if os.environ.get("GEMINI_API_KEY", "").strip():
+        return "gemini"
+    if os.environ.get("OPENAI_API_KEY", "").strip():
+        return "openai"
+    if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        return "anthropic"
+    return "none"
+
+
+def llm_call(system_prompt: str, user_prompt: str, max_tokens: int = 1200) -> str:
+    """
+    Call the configured LLM provider with a system + user prompt.
+    Raises RuntimeError if no provider is configured or the call fails.
+    """
+    provider = _get_provider()
+
+    if provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY not configured. Add it to .env or Settings.")
+        import requests as _req
+
+        model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        payload = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"parts": [{"text": user_prompt}]}],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+        resp = _req.post(url, json=payload, timeout=120, verify=False)
+        resp.raise_for_status()
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        if not candidates:
+            raise RuntimeError("Gemini returned no candidates: " + json.dumps(data.get("error", data)))
+        return candidates[0]["content"]["parts"][0]["text"].strip()
+
+    elif provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY not configured. Add it to .env or Settings.")
+        import requests as _req
+
+        model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip()
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.3,
+            "max_tokens": max_tokens,
+        }
+        resp = _req.post(url, json=payload, headers=headers, timeout=120, verify=False)
+        resp.raise_for_status()
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError("OpenAI returned no choices: " + json.dumps(data.get("error", data)))
+        return choices[0]["message"]["content"].strip()
+
+    elif provider == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY not configured. Add it to .env or Settings.")
+        try:
+            import anthropic
+        except ImportError:
+            raise RuntimeError("anthropic package not installed (pip install anthropic)")
+
+        model_name = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514").strip()
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model_name,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.3,
+            max_tokens=max_tokens,
+        )
+        return response.content[0].text.strip()
+
+    else:
+        raise RuntimeError(
+            "No LLM configured. Add GEMINI_API_KEY (free), OPENAI_API_KEY, or ANTHROPIC_API_KEY in Settings."
+        )
+
+
 def summarize_rca(rca_data: dict[str, Any]) -> str | None:
     """
-    Send RCA data to Claude and return a formatted executive summary.
-    Returns None if Anthropic is not configured or the call fails.
+    Send RCA data to the configured LLM and return a formatted executive summary.
+    Returns None if no LLM is configured or the call fails.
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
+    if _get_provider() == "none":
         return None
-
-    try:
-        import anthropic
-    except ImportError:
-        return None
-
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514").strip()
 
     prompt_data = _build_prompt_data(rca_data)
 
@@ -63,15 +153,7 @@ def summarize_rca(rca_data: dict[str, Any]) -> str | None:
     )
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=model,
-            system=system_prompt,
-            messages=[{"role": "user", "content": prompt_data}],
-            temperature=0.3,
-            max_tokens=1200,
-        )
-        return response.content[0].text.strip()
+        return llm_call(system_prompt, prompt_data, max_tokens=1200)
     except Exception:
         return None
 

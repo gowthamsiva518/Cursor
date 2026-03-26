@@ -76,6 +76,170 @@ def api_health():
     return jsonify({"ok": True, "config": str(CONFIG_PATH)})
 
 
+def _mask(val: str) -> str:
+    """Mask a sensitive value, showing only the first 4 and last 4 chars."""
+    if not val:
+        return "(not set)"
+    if len(val) <= 10:
+        return val[:2] + "***" + val[-2:]
+    return val[:4] + "***" + val[-4:]
+
+
+@app.route("/api/settings")
+def api_settings():
+    """Return configuration details for all agents (sensitive values masked)."""
+    import os
+
+    def _env(key, default=""):
+        return os.environ.get(key, default).strip()
+
+    def _bool_env(key):
+        return _env(key).lower() in ("true", "1", "yes")
+
+    return jsonify({
+        "stream_server": {
+            "title": "Stream Server Alerts",
+            "opensearch_url": _env("OPENSEARCH_URL"),
+            "opensearch_index": _env("OPENSEARCH_INDEX", "stream-*"),
+            "opensearch_user": _env("OPENSEARCH_USER") or "(not set)",
+            "opensearch_password": _mask(_env("OPENSEARCH_PASSWORD")),
+            "time_field": _env("OPENSEARCH_TIME_FIELD", "@timestamp"),
+            "error_code_field": _env("OPENSEARCH_ERROR_CODE_FIELD", "error_code"),
+            "error_name_field": _env("OPENSEARCH_ERROR_NAME_FIELD"),
+            "error_stack_field": _env("OPENSEARCH_ERROR_STACK_FIELD"),
+            "level_field": _env("OPENSEARCH_LEVEL_FIELD"),
+            "level_value": _env("OPENSEARCH_LEVEL_VALUE"),
+            "k8s_version_prefix": _env("OPENSEARCH_K8S_VERSION_PREFIX"),
+            "exclude_error_stack": _env("OPENSEARCH_EXCLUDE_ERROR_STACK"),
+            "verify_ssl": _env("OPENSEARCH_VERIFY_SSL", "1") != "0",
+            "slack_enabled": _bool_env("SLACK_ENABLED"),
+            "slack_channel": _env("SLACK_CHANNEL"),
+            "slack_bot_token": _mask(_env("SLACK_BOT_TOKEN")),
+            "slack_app_token": _mask(_env("SLACK_APP_TOKEN")),
+            "slack_listener_enabled": _bool_env("SLACK_LISTENER_ENABLED"),
+            "slack_alert_keywords": _env("SLACK_ALERT_KEYWORDS"),
+            "slack_alert_time_minutes": _env("SLACK_ALERT_TIME_MINUTES", "15"),
+            "slack_error_threshold": _env("SLACK_ERROR_THRESHOLD", "30"),
+        },
+        "bot_engine": {
+            "title": "Bot Engine Default Logs",
+            "opensearch_url": _env("OPENSEARCH_URL"),
+            "bot_engine_index": _env("OPENSEARCH_BOT_ENGINE_INDEX"),
+            "conversation_index": _env("OPENSEARCH_CONVERSATION_INDEX", "conversation-*"),
+            "context_field": _env("OPENSEARCH_BOT_ENGINE_CONTEXT_FIELD"),
+            "time_field": _env("OPENSEARCH_TIME_FIELD", "@timestamp"),
+            "opensearch_user": _env("OPENSEARCH_USER") or "(not set)",
+            "opensearch_password": _mask(_env("OPENSEARCH_PASSWORD")),
+        },
+        "twilio": {
+            "title": "Twilio Log Analysis",
+            "account_sid": _mask(_env("TWILIO_ACCOUNT_SID")),
+            "auth_token": _mask(_env("TWILIO_AUTH_TOKEN")),
+            "exclude_subaccounts": _env("TWILIO_EXCLUDE_SUBACCOUNTS"),
+            "extra_accounts": _mask(_env("TWILIO_EXTRA_ACCOUNTS")),
+            "workers": _env("TWILIO_WORKERS", "100"),
+        },
+        "llm": {
+            "title": "AI / LLM Configuration",
+            "llm_provider": _env("LLM_PROVIDER") or "auto",
+            "gemini_api_key": _mask(_env("GEMINI_API_KEY")),
+            "gemini_model": _env("GEMINI_MODEL", "gemini-2.5-flash"),
+            "openai_api_key": _mask(_env("OPENAI_API_KEY")),
+            "openai_model": _env("OPENAI_MODEL", "gpt-4o-mini"),
+            "anthropic_api_key": _mask(_env("ANTHROPIC_API_KEY")),
+            "anthropic_model": _env("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
+        },
+        "kubernetes": {
+            "title": "Kubernetes (Lens)",
+            "pod_filter": _env("KUBE_POD_FILTER"),
+            "label_selector": _env("KUBE_LABEL_SELECTOR"),
+            "namespace": _env("KUBE_NAMESPACE") or "(default)",
+        },
+    })
+
+
+EDITABLE_ENV_KEYS = {
+    "OPENSEARCH_URL", "OPENSEARCH_INDEX", "OPENSEARCH_USER", "OPENSEARCH_PASSWORD",
+    "OPENSEARCH_TIME_FIELD", "OPENSEARCH_ERROR_CODE_FIELD", "OPENSEARCH_ERROR_NAME_FIELD",
+    "OPENSEARCH_ERROR_STACK_FIELD", "OPENSEARCH_LEVEL_FIELD", "OPENSEARCH_LEVEL_VALUE",
+    "OPENSEARCH_K8S_VERSION_PREFIX", "OPENSEARCH_EXCLUDE_ERROR_STACK", "OPENSEARCH_VERIFY_SSL",
+    "OPENSEARCH_BOT_ENGINE_INDEX", "OPENSEARCH_CONVERSATION_INDEX",
+    "OPENSEARCH_BOT_ENGINE_CONTEXT_FIELD",
+    "SLACK_ENABLED", "SLACK_CHANNEL", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN",
+    "SLACK_LISTENER_ENABLED", "SLACK_ALERT_KEYWORDS", "SLACK_ALERT_TIME_MINUTES",
+    "SLACK_ERROR_THRESHOLD",
+    "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_EXCLUDE_SUBACCOUNTS",
+    "TWILIO_EXTRA_ACCOUNTS", "TWILIO_WORKERS",
+    "LLM_PROVIDER", "GEMINI_API_KEY", "GEMINI_MODEL",
+    "OPENAI_API_KEY", "OPENAI_MODEL",
+    "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
+    "KUBE_POD_FILTER", "KUBE_LABEL_SELECTOR", "KUBE_NAMESPACE",
+}
+
+
+def _update_env_file(updates: dict[str, str]):
+    """Update .env file in-place, preserving comments and structure."""
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.exists():
+        env_path.write_text("")
+
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    remaining = dict(updates)
+    new_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in remaining:
+                new_lines.append(f"{key}={remaining.pop(key)}")
+                continue
+        new_lines.append(line)
+
+    for key, val in remaining.items():
+        new_lines.append(f"{key}={val}")
+
+    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+    import os
+    for key, val in updates.items():
+        os.environ[key] = val
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_settings_save():
+    """Save configuration changes to .env and reload into environment."""
+    data = request.get_json() or {}
+    updates = {}
+    for key, val in data.items():
+        if key not in EDITABLE_ENV_KEYS:
+            continue
+        updates[key] = str(val).strip()
+
+    if not updates:
+        return jsonify({"ok": False, "error": "No valid settings to save"}), 400
+
+    try:
+        _update_env_file(updates)
+        return jsonify({"ok": True, "saved": list(updates.keys())})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/restart", methods=["POST"])
+def api_restart():
+    """Restart the Flask server by exiting the process (debug auto-reloader will respawn)."""
+    import threading
+
+    def _shutdown():
+        import time, signal
+        time.sleep(0.5)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_shutdown, daemon=True).start()
+    return jsonify({"ok": True, "message": "Server restarting..."})
+
+
 @app.route("/api/opensearch/status")
 def api_opensearch_status():
     """Check OpenSearch connection. Returns ok, connected, error (if any)."""
@@ -102,6 +266,40 @@ def api_k8s_status():
         return jsonify({"ok": False, "connected": False, "error": str(e)})
 
 
+@app.route("/api/twilio/error-logs", methods=["POST"])
+def api_twilio_error_logs():
+    """Fetch Twilio error logs (Monitor Alerts) for a tenant."""
+    from twilio_client import query_alerts
+
+    data = request.get_json() or {}
+    tenant = (data.get("tenant") or "").strip()
+
+    time_minutes = 60
+    try:
+        time_minutes = max(1, min(43200, int(data.get("time_minutes", 60))))
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        result = query_alerts(
+            time_minutes=time_minutes,
+            tenant_names=[tenant] if tenant else None,
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    if result.get("error"):
+        return jsonify({"ok": False, "error": result["error"]}), 500
+
+    return jsonify({
+        "ok": True,
+        "total": result.get("total_alerts", 0),
+        "error_codes": result.get("error_codes", {}),
+        "alerts": result.get("alerts", []),
+        "accounts_checked": result.get("accounts_checked", []),
+    })
+
+
 @app.route("/api/twilio/status")
 def api_twilio_status():
     """Check Twilio connection."""
@@ -123,13 +321,15 @@ def _phone_digits(phone: str) -> str:
 
 @app.route("/api/twilio/logs", methods=["POST"])
 def api_twilio_logs():
-    """Fetch Twilio call logs filtered by From number."""
+    """Fetch Twilio call logs filtered by From number and/or tenant."""
     from twilio_client import query_call_logs
 
     data = request.get_json() or {}
-    from_number = (data.get("from_number") or "").strip()
-    if not from_number:
-        return jsonify({"ok": False, "error": "from_number is required"}), 400
+    from_number = (data.get("from_number") or "").strip() or None
+    tenant = (data.get("tenant") or "").strip() or None
+
+    if not from_number and not tenant:
+        return jsonify({"ok": False, "error": "from_number or tenant is required"}), 400
 
     time_minutes = 60
     try:
@@ -138,7 +338,11 @@ def api_twilio_logs():
         pass
 
     try:
-        result = query_call_logs(time_minutes=time_minutes, from_number=from_number)
+        result = query_call_logs(
+            time_minutes=time_minutes,
+            from_number=from_number,
+            tenant_names=[tenant] if tenant else None,
+        )
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -146,7 +350,7 @@ def api_twilio_logs():
         return jsonify({"ok": False, "error": result["error"]}), 500
 
     all_calls = result.get("calls", [])
-    failed = sum(1 for c in all_calls if c.get("error_code"))
+    failed = sum(1 for c in all_calls if c.get("error_code") or c.get("status") in ("failed", "busy"))
 
     return jsonify({
         "ok": True,
@@ -159,16 +363,18 @@ def api_twilio_logs():
 
 @app.route("/api/download/twilio-logs", methods=["POST"])
 def api_download_twilio_logs():
-    """Download Twilio call logs filtered by From number as CSV or JSON."""
+    """Download Twilio call logs filtered by From number and/or tenant as CSV or JSON."""
     import csv
     import io
     import json as json_mod
     from twilio_client import query_call_logs
 
     data = request.get_json() or {}
-    from_number = (data.get("from_number") or "").strip()
-    if not from_number:
-        return jsonify({"ok": False, "error": "from_number is required"}), 400
+    from_number = (data.get("from_number") or "").strip() or None
+    tenant = (data.get("tenant") or "").strip() or None
+
+    if not from_number and not tenant:
+        return jsonify({"ok": False, "error": "from_number or tenant is required"}), 400
 
     time_minutes = 60
     try:
@@ -179,7 +385,11 @@ def api_download_twilio_logs():
     fmt = (data.get("format") or "csv").strip().lower()
 
     try:
-        result = query_call_logs(time_minutes=time_minutes, from_number=from_number)
+        result = query_call_logs(
+            time_minutes=time_minutes,
+            from_number=from_number,
+            tenant_names=[tenant] if tenant else None,
+        )
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -187,7 +397,7 @@ def api_download_twilio_logs():
         return jsonify({"ok": False, "error": result["error"]}), 500
 
     filtered = result.get("calls", [])
-    safe_name = re.sub(r"[^\w\-]", "", from_number)
+    safe_name = re.sub(r"[^\w\-]", "", from_number or tenant or "all")
     base_name = f"twilio_logs_{safe_name}_{len(filtered)}_rows"
 
     if fmt == "json":
@@ -240,6 +450,43 @@ def api_tenants():
         return jsonify({"ok": True, "tenants": tenants})
     except Exception as e:
         return jsonify({"ok": False, "tenants": [], "error": str(e)})
+
+
+@app.route("/api/tenant/error-logs", methods=["POST"])
+def api_tenant_error_logs():
+    """Fetch error logs from OpenSearch for a specific tenant."""
+    from opensearch_client import query_all_error_logs
+
+    data = request.get_json() or {}
+    tenant = (data.get("tenant") or "").strip()
+    if not tenant:
+        return jsonify({"ok": False, "error": "tenant is required"}), 400
+
+    time_minutes = 60
+    try:
+        time_minutes = max(1, min(43200, int(data.get("time_minutes", 60))))
+    except (TypeError, ValueError):
+        pass
+
+    result = query_all_error_logs(error_codes=None, time_minutes=time_minutes, tenant_filter=tenant)
+    if result is None:
+        return jsonify({"ok": False, "error": "OpenSearch not configured"}), 400
+    if result.get("error"):
+        return jsonify({"ok": False, "error": result["error"]}), 500
+
+    logs = result.get("logs", [])
+    error_codes = {}
+    for log in logs:
+        code = str(log.get("error_code", "unknown"))
+        error_codes[code] = error_codes.get(code, 0) + 1
+
+    return jsonify({
+        "ok": True,
+        "tenant": tenant,
+        "total": len(logs),
+        "error_codes": error_codes,
+        "logs": logs[:500],
+    })
 
 
 @app.route("/api/run", methods=["POST"])
@@ -505,28 +752,33 @@ def api_download_bot_engine_logs():
 
 @app.route("/api/bot-engine/analyse", methods=["POST"])
 def api_bot_engine_analyse():
-    """Analyse bot engine logs using Claude and return a summary of issues."""
+    """Analyse bot engine logs using the configured LLM and return a summary."""
+    from ai_summarizer import llm_call, _get_provider
+
     data = request.get_json() or {}
     logs = data.get("logs")
     if not logs or not isinstance(logs, list):
         return jsonify({"ok": False, "error": "logs array is required"}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        return jsonify({"ok": False, "error": "ANTHROPIC_API_KEY not configured. Add it to .env"}), 400
-
-    try:
-        import anthropic
-    except ImportError:
-        return jsonify({"ok": False, "error": "anthropic package not installed (pip install anthropic)"}), 500
+    if _get_provider() == "none":
+        return jsonify({"ok": False, "error": "No LLM configured. Add GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in Settings."}), 400
 
     log_lines = []
+    error_count = 0
+    warn_count = 0
+    api_set = set()
     for i, log in enumerate(logs[:200], 1):
         parts = [f"[{i}]", log.get("timestamp", "")]
-        if log.get("level"):
-            parts.append(f"level={log['level']}")
+        lvl = log.get("level", "")
+        if lvl:
+            parts.append(f"level={lvl}")
+            if str(lvl) in ("50", "error", "ERROR"):
+                error_count += 1
+            elif str(lvl) in ("40", "warn", "WARN"):
+                warn_count += 1
         if log.get("api_name"):
             parts.append(f"api={log['api_name']}")
+            api_set.add(log["api_name"])
         if log.get("method_name"):
             parts.append(f"method={log['method_name']}")
         if log.get("error_code"):
@@ -538,46 +790,55 @@ def api_bot_engine_analyse():
         log_lines.append(" | ".join(parts))
 
     prompt_data = (
+        f"=== SESSION METADATA ===\n"
         f"Connection ID: {logs[0].get('connection_id', 'unknown')}\n"
         f"Tenant: {logs[0].get('tenant_name', 'unknown')}\n"
-        f"Total logs: {len(logs)}\n"
+        f"Total log entries: {len(logs)}\n"
+        f"Error-level entries: {error_count}\n"
+        f"Warning-level entries: {warn_count}\n"
+        f"Unique APIs called: {', '.join(sorted(api_set)) if api_set else 'none'}\n"
         f"Time range: {logs[0].get('timestamp', '?')} to {logs[-1].get('timestamp', '?')}\n\n"
         "=== LOG ENTRIES ===\n" + "\n".join(log_lines)
     )
 
     system_prompt = (
-        "You are a senior Bot Engine engineer analysing a sequence of log entries "
-        "for a single customer connection (voice/chat session). Your job is to determine "
-        "if the session completed successfully or if something went wrong.\n\n"
-        "Analyse the log entries and produce a clear report with these sections:\n\n"
-        "**Session Overview**: Summarise the session — tenant, connection ID, how many API calls, "
-        "time span, and the overall flow (e.g. session create -> auth -> account lookup -> transfer).\n\n"
-        "**Issues Found**: List any errors, failures, or anomalies. For each issue, state:\n"
-        "  - Which API call / log entry it occurred in\n"
-        "  - The error code and message\n"
-        "  - The likely impact on the customer experience\n"
-        "If no issues are found, say 'No issues detected — session completed successfully.'\n\n"
-        "**Flow Analysis**: Was the API call sequence logical and complete? "
-        "Were there unexpected repeated calls, missing steps, or unusual timing gaps?\n\n"
-        "**Verdict**: One sentence — did this session succeed or fail, and why?\n\n"
+        "You are a senior Bot Engine engineer analysing log entries for a single customer "
+        "voice/chat session. Produce a thorough, well-structured analysis.\n\n"
+        "Your output MUST use these EXACT section headers (with ** bold markers):\n\n"
+        "**Session Overview**\n"
+        "Summarise: tenant name, connection ID, total log count, time span, and the overall "
+        "call flow as a step-by-step sequence (e.g. 1. Session created -> 2. Authentication -> "
+        "3. Account lookup -> 4. Balance inquiry -> 5. Transfer -> 6. Session ended). "
+        "List every distinct API/method called.\n\n"
+        "**Issues Found**\n"
+        "For EACH error or warning, create a numbered entry with:\n"
+        "- Log entry number, timestamp, and API/method name\n"
+        "- Error code and full error message\n"
+        "- Severity: CRITICAL / WARNING / INFO\n"
+        "- Impact: what this means for the customer\n"
+        "If no issues, say: 'No issues detected — session completed successfully.'\n\n"
+        "**Timeline Analysis**\n"
+        "Walk through the call chronologically. Highlight:\n"
+        "- Any unusual delays between API calls (>5 seconds)\n"
+        "- Repeated/retried calls\n"
+        "- Missing expected steps\n"
+        "- Points where the flow deviated from normal\n\n"
+        "**Root Cause** (only if errors were found)\n"
+        "What caused the issue? Be specific — name the API, error code, and likely underlying reason.\n\n"
+        "**Verdict**\n"
+        "One clear sentence: SUCCESS or FAILURE, with the reason.\n"
+        "Then a confidence level: HIGH / MEDIUM / LOW.\n\n"
         "Rules:\n"
-        "- Use the exact timestamps, API names, error codes, and messages from the logs.\n"
-        "- Keep each section to 2-4 sentences.\n"
-        "- Do NOT use markdown headers (##). Use **Bold** labels only.\n"
-        "- Do NOT add disclaimers about being an AI."
+        "- Use the EXACT timestamps, API names, error codes, and messages from the logs.\n"
+        "- Be thorough — do not skip any errors or warnings.\n"
+        "- If a field is missing or unclear, say so explicitly.\n"
+        "- Do NOT use markdown headers (## or #). Use **Bold** labels ONLY.\n"
+        "- Do NOT add disclaimers about being an AI.\n"
+        "- Use plain language a non-engineer can understand."
     )
 
     try:
-        model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514").strip()
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=model,
-            system=system_prompt,
-            messages=[{"role": "user", "content": prompt_data}],
-            temperature=0.3,
-            max_tokens=1500,
-        )
-        analysis = response.content[0].text.strip()
+        analysis = llm_call(system_prompt, prompt_data, max_tokens=3000)
         return jsonify({"ok": True, "analysis": analysis})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
@@ -585,9 +846,10 @@ def api_bot_engine_analyse():
 
 @app.route("/api/download/error-logs", methods=["POST"])
 def api_download_error_logs():
-    """Fetch all matching error logs from OpenSearch, enrich with connection_id from conversation logs, and return as CSV."""
+    """Fetch all matching error logs from OpenSearch, enrich with connection_id, and return as CSV or JSON."""
     import csv
     import io
+    import json as json_mod
     from opensearch_client import query_all_error_logs, lookup_connection_ids
 
     data = request.get_json() or {}
@@ -603,6 +865,7 @@ def api_download_error_logs():
     except (TypeError, ValueError):
         pass
 
+    fmt = (data.get("format") or "csv").strip().lower()
     tenant_filter = data.get("tenant_filter") or None
     result = query_all_error_logs(error_codes=codes or None, time_minutes=time_minutes, tenant_filter=tenant_filter)
     if result is None:
@@ -612,9 +875,25 @@ def api_download_error_logs():
 
     logs = result.get("logs", [])
 
-    # Look up connection.id from conversation logs for each request_id
     req_ids = [log.get("request_id", "") for log in logs if log.get("request_id")]
     conn_id_map = lookup_connection_ids(req_ids) if req_ids else {}
+
+    base_name = f"opensearch_error_logs_{len(logs)}_rows"
+
+    if fmt == "json":
+        enriched = []
+        for log in logs:
+            entry = dict(log)
+            req_id = entry.get("request_id", "")
+            if req_id and req_id in conn_id_map:
+                entry["connection_id"] = conn_id_map[req_id]
+            enriched.append(entry)
+        content = json_mod.dumps(enriched, indent=2, default=str)
+        return Response(
+            content,
+            mimetype="application/json",
+            headers={"Content-Disposition": f"attachment; filename={base_name}.json"},
+        )
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -633,11 +912,10 @@ def api_download_error_logs():
             log.get("k8s_version", ""),
         ])
 
-    csv_content = buf.getvalue()
     return Response(
-        csv_content,
+        buf.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=opensearch_error_logs_{len(logs)}_rows.csv"},
+        headers={"Content-Disposition": f"attachment; filename={base_name}.csv"},
     )
 
 
