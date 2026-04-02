@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   // Run Python agent via stdin/stdout
   const scriptPath = path.join(process.cwd(), "agent_stdin.py");
   return new Promise<NextResponse>((resolve) => {
-    const proc = spawn("python", [scriptPath], {
+    const proc = spawn("python3", [scriptPath], {
       cwd: process.cwd(),
       stdio: ["pipe", "pipe", "pipe"],
     });
