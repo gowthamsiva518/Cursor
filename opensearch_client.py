@@ -18,6 +18,9 @@ Configure via environment:
   OPENSEARCH_VERIFY_SSL        - set to 0 to disable (optional)
 
 If OPENSEARCH_URL is not set, all functions return None and steps use stubs.
+
+Integration Manager default logs (optional): OPENSEARCH_INTEGRATION_MANAGER_INDEX
+(e.g. integration-manager.default-*), same connectionId scan pattern as bot engine.
 """
 
 from __future__ import annotations
@@ -34,6 +37,24 @@ except ImportError:
     _OPENSEARCH_AVAILABLE = False
 
 
+def _request_timeout(default: float = 60.0) -> float:
+    """Return the per-request OpenSearch timeout (seconds).
+
+    Tunable via OPENSEARCH_REQUEST_TIMEOUT in .env. Default 60s — the
+    opensearch-py default of 10s is too tight for our scan-and-filter
+    queries (bot-engine / integration-manager by connectionId) and for
+    APT-wide stream-server searches.
+    """
+    raw = os.environ.get("OPENSEARCH_REQUEST_TIMEOUT", "").strip()
+    if not raw:
+        return float(default)
+    try:
+        v = float(raw)
+        return v if v > 0 else float(default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def _get_client() -> Any | None:
     url = os.environ.get("OPENSEARCH_URL", "").strip()
     if not url or not _OPENSEARCH_AVAILABLE:
@@ -48,6 +69,7 @@ def _get_client() -> Any | None:
     auth = None
     if os.environ.get("OPENSEARCH_USER") and os.environ.get("OPENSEARCH_PASSWORD"):
         auth = (os.environ["OPENSEARCH_USER"], os.environ["OPENSEARCH_PASSWORD"])
+    timeout = _request_timeout()
     try:
         return OpenSearch(
             hosts=[{"host": host, "port": port}],
@@ -56,6 +78,9 @@ def _get_client() -> Any | None:
             verify_certs=verify,
             ssl_show_warn=verify,
             http_auth=auth,
+            timeout=timeout,
+            max_retries=2,
+            retry_on_timeout=True,
         )
     except Exception:
         return None
@@ -726,6 +751,76 @@ def _extract_connection_id(src: dict) -> str:
         return ""
 
 
+def _extract_integration_manager_connection_id(src: dict) -> str:
+    """Extract connectionId from Integration Manager default logs (_source).
+
+    Typical path: rawLog.data.context.metadata.connectionId.
+    Mesh / error payloads may nest under rawLog.data.message.context.metadata.connectionId.
+    """
+    try:
+        raw = src.get("rawLog")
+        if not isinstance(raw, dict):
+            return ""
+        d1 = raw.get("data")
+        if not isinstance(d1, dict):
+            return ""
+        ctx = d1.get("context")
+        if isinstance(ctx, dict):
+            meta = ctx.get("metadata")
+            if isinstance(meta, dict) and meta.get("connectionId"):
+                return str(meta.get("connectionId") or "")
+        msg = d1.get("message")
+        if isinstance(msg, dict):
+            ctx2 = msg.get("context")
+            if isinstance(ctx2, dict):
+                meta2 = ctx2.get("metadata")
+                if isinstance(meta2, dict) and meta2.get("connectionId"):
+                    return str(meta2.get("connectionId") or "")
+        d2 = d1.get("data")
+        if isinstance(d2, dict):
+            meta3 = d2.get("metadata")
+            if isinstance(meta3, dict) and meta3.get("connectionId"):
+                return str(meta3.get("connectionId") or "")
+        return ""
+    except Exception:
+        return ""
+
+
+def _flatten_integration_manager_log(src: dict, doc_cid: str) -> dict[str, Any]:
+    """Normalise an Integration Manager _source doc to the same shape as bot engine rows."""
+    raw = src.get("rawLog") if isinstance(src.get("rawLog"), dict) else {}
+    d = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+    api_name = str(d.get("apiName") or _get_nested(src, "rawLog.data.message.request.url") or "")
+    method_name = str(d.get("methodName") or _get_nested(src, "rawLog.data.message.request.method") or "")
+    code = str(_get_nested(src, "rawLog.data.error.code") or "")
+    if not code and d.get("status") is not None:
+        code = str(d.get("status") or "")
+    err_msg = str(_get_nested(src, "rawLog.data.error.message") or "")
+    if not err_msg:
+        m = d.get("message")
+        if isinstance(m, str):
+            err_msg = m
+        elif isinstance(m, dict):
+            err_msg = str(m.get("error") or m.get("response") or "")[:2000]
+    if not err_msg:
+        err_msg = str(src.get("msg") or "")
+    stack = str(_get_nested(src, "rawLog.data.error.stack") or _get_nested(src, "rawLog.data.stack") or "")
+    line_msg = str(src.get("msg") or src.get("message") or "")
+    return {
+        "timestamp": _get_nested(src, "@timestamp") or src.get("@timestamp") or "",
+        "level": src.get("level") or "",
+        "tenant_name": str(_get_nested(src, "rawLog.tenantName") or src.get("tenant_name") or ""),
+        "api_name": api_name,
+        "method_name": method_name,
+        "connection_id": doc_cid,
+        "message": line_msg,
+        "error_code": code,
+        "error_stack": stack,
+        "error_message": err_msg,
+        "_raw": src,
+    }
+
+
 def _uuid1_to_datetime(uid_str: str):
     """Extract the embedded timestamp from a UUIDv1 string.
 
@@ -744,28 +839,41 @@ def _uuid1_to_datetime(uid_str: str):
 
 
 def query_bot_engine_default_logs(
-    connection_id: str,
+    connection_id: str | None = None,
     time_minutes: int | None = None,
     index: str | None = None,
     max_logs: int = 500,
+    context_id: str | None = None,
 ) -> dict[str, Any] | None:
     """
-    Query bot engine logs by rawLog.data.data.metadata.connectionId.
+    Query bot engine default logs by Connection ID and/or Context ID.
 
-    The connectionId field is stored in _source but NOT indexed by OpenSearch,
-    so we fetch docs and filter by connectionId in Python.
+    Filters:
+      - ``connection_id`` → ``rawLog.data.data.metadata.connectionId`` — stored in ``_source``
+        but NOT indexed by OpenSearch. We fetch docs and filter by connectionId in Python.
+      - ``context_id`` is matched against any of the indexed contextId paths configured in
+        ``OPENSEARCH_BOT_ENGINE_CONTEXT_FIELD`` (comma-separated; defaults to both
+        ``rawLog.data.event.request.meta.contextId`` and ``rawLog.data.contextId`` because
+        bot-engine emits the contextId at one of those two locations depending on the
+        moduleName).  A ``bool/should`` ``match_phrase`` clause is added so any match
+        across the configured paths returns the doc.
 
-    If the connectionId is a UUIDv1 we extract its embedded timestamp and
-    search a tight ±2-hour window around it (much faster than scanning from
-    the newest docs).  Otherwise we fall back to the user-selected time window.
-    When time_minutes is None or 0 and the UUID extraction works, only the
-    UUID-derived window is used.
+    At least one of the two is required.
+
+    Time window logic:
+      - If a UUIDv1 ``connection_id`` is provided, derive a tight ±2-hour window from
+        the UUID timestamp (much faster than scanning from newest docs).
+      - Else if ``time_minutes`` > 0, use the user-selected window.
+      - Else (e.g. context_id only and no manual window), no time filter — context_id
+        is selective enough on its own.
 
     Returns None when the bot engine index is not configured; otherwise
     { total, logs[], scanned }.
     """
-    if not connection_id or not connection_id.strip():
-        return {"total": 0, "logs": [], "error": "connection_id is required"}
+    cid = (connection_id or "").strip()
+    ctx_id = (context_id or "").strip()
+    if not cid and not ctx_id:
+        return {"total": 0, "logs": [], "error": "connection_id or context_id is required"}
 
     client = _get_client()
     if not client:
@@ -776,9 +884,176 @@ def query_bot_engine_default_logs(
         return None
 
     time_field = os.environ.get("OPENSEARCH_TIME_FIELD", "@timestamp")
+    context_field_raw = os.environ.get(
+        "OPENSEARCH_BOT_ENGINE_CONTEXT_FIELD",
+        "rawLog.data.event.request.meta.contextId,rawLog.data.contextId",
+    )
+    _well_known_ctx_paths = [
+        "rawLog.data.event.request.meta.contextId",
+        "rawLog.data.contextId",
+    ]
+    context_fields: list[str] = []
+    for p in (context_field_raw.split(",") + _well_known_ctx_paths):
+        p = p.strip()
+        if p and p not in context_fields:
+            context_fields.append(p)
+    if not context_fields:
+        context_fields = list(_well_known_ctx_paths)
+
+    uuid_dt = _uuid1_to_datetime(cid) if cid else None
+    if uuid_dt:
+        from datetime import timedelta
+        window_start = (uuid_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        window_end = (uuid_dt + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        time_filter = {"range": {time_field: {"gte": window_start, "lte": window_end}}}
+    elif time_minutes and time_minutes > 0:
+        time_filter = _time_range(time_field, time_minutes)
+    else:
+        time_filter = None
+
+    base_filters: list[dict[str, Any]] = []
+    if time_filter:
+        base_filters.append(time_filter)
+    if ctx_id:
+        if len(context_fields) == 1:
+            base_filters.append({"match_phrase": {context_fields[0]: ctx_id}})
+        else:
+            base_filters.append({
+                "bool": {
+                    "should": [{"match_phrase": {fp: ctx_id}} for fp in context_fields],
+                    "minimum_should_match": 1,
+                }
+            })
+
+    # When context_id is provided we already filter server-side, so we don't need a
+    # large scan budget. When only connection_id is provided, the field is not indexed
+    # so we have to scan-and-filter.
+    batch_size = 2000
+    matched: list[dict[str, Any]] = []
+    search_after = None
+    scanned = 0
+    max_scan = 200000 if cid else 20000
+
+    while scanned < max_scan and len(matched) < max_logs:
+        query_body: dict[str, Any] = {
+            "size": batch_size,
+            "query": {"bool": {"filter": base_filters}} if base_filters else {"match_all": {}},
+            "sort": [{time_field: {"order": "asc"}}, {"_id": "asc"}],
+        }
+        if search_after:
+            query_body["search_after"] = search_after
+
+        try:
+            res = client.search(index=index_pattern, body=query_body, ignore_unavailable=True)
+        except Exception as exc:
+            return {"total": len(matched), "logs": matched, "error": str(exc)}
+
+        hits_list = (res or {}).get("hits", {}).get("hits", [])
+        if not hits_list:
+            break
+
+        for h in hits_list:
+            src = h.get("_source") or {}
+            doc_cid = _extract_connection_id(src)
+            # When connection_id is provided, only keep docs whose extracted cid matches.
+            # When only context_id is provided, server-side match_phrase already scoped
+            # the result set, so accept every hit.
+            if cid and doc_cid != cid:
+                continue
+            doc_ctx = ""
+            for fp in context_fields:
+                v = _get_nested(src, fp)
+                if v:
+                    doc_ctx = str(v)
+                    break
+            if not doc_ctx:
+                doc_ctx = str(_get_nested(src, "rawLog.data.contextId") or "")
+            matched.append({
+                "timestamp": _get_nested(src, "@timestamp") or src.get("@timestamp") or "",
+                "level": src.get("level") or "",
+                "tenant_name": str(_get_nested(src, "rawLog.tenantName") or src.get("tenant_name") or ""),
+                "api_name": str(_get_nested(src, "rawLog.data.apiName") or ""),
+                "method_name": str(_get_nested(src, "rawLog.data.methodName") or ""),
+                "connection_id": doc_cid,
+                "context_id": doc_ctx,
+                "message": str(src.get("msg") or src.get("message") or ""),
+                "error_code": str(_get_nested(src, "rawLog.data.error.code") or _get_nested(src, "rawLog.data.status") or ""),
+                "error_stack": str(_get_nested(src, "rawLog.data.error.stack") or _get_nested(src, "rawLog.data.stack") or ""),
+                "error_message": str(_get_nested(src, "rawLog.data.error.message") or _get_nested(src, "rawLog.data.message") or ""),
+                "_raw": src,
+            })
+            if len(matched) >= max_logs:
+                break
+
+        scanned += len(hits_list)
+        search_after = hits_list[-1].get("sort")
+        if not search_after:
+            break
+
+    matched.sort(key=lambda l: l.get("timestamp") or "")
+
+    diagnostics: dict[str, Any] | None = None
+    if ctx_id and not matched:
+        diagnostics = {
+            "context_field_counts": {},
+            "context_fields_searched": list(context_fields),
+        }
+        for fp in context_fields:
+            try:
+                cnt_res = client.count(
+                    index=index_pattern,
+                    body={"query": {"match_phrase": {fp: ctx_id}}},
+                    ignore_unavailable=True,
+                )
+                diagnostics["context_field_counts"][fp] = int((cnt_res or {}).get("count", 0))
+            except Exception as exc:
+                diagnostics["context_field_counts"][fp] = f"error: {exc}"
+        try:
+            any_res = client.count(
+                index=index_pattern,
+                body={"query": {"query_string": {"query": '"' + ctx_id.replace('"', '') + '"'}}},
+                ignore_unavailable=True,
+            )
+            diagnostics["any_text_match"] = int((any_res or {}).get("count", 0))
+        except Exception as exc:
+            diagnostics["any_text_match"] = f"error: {exc}"
+
+    out: dict[str, Any] = {"total": len(matched), "logs": matched, "scanned": scanned}
+    if diagnostics is not None:
+        out["diagnostics"] = diagnostics
+    return out
+
+
+def query_integration_manager_default_logs(
+    connection_id: str,
+    time_minutes: int | None = None,
+    index: str | None = None,
+    max_logs: int = 500,
+) -> dict[str, Any] | None:
+    """
+    Query Integration Manager default logs by connectionId (same scan strategy as
+    query_bot_engine_default_logs, different _source paths).
+
+    connectionId is read from rawLog.data.context.metadata.connectionId or
+    rawLog.data.message.context.metadata.connectionId when nested under errors.
+
+    Returns None when OPENSEARCH_INTEGRATION_MANAGER_INDEX is not set; otherwise
+    { total, logs[], scanned }.
+    """
+    if not connection_id or not connection_id.strip():
+        return {"total": 0, "logs": [], "error": "connection_id is required"}
+
+    client = _get_client()
+    if not client:
+        return None
+
+    index_pattern = index or os.environ.get("OPENSEARCH_INTEGRATION_MANAGER_INDEX", "").strip()
+    if not index_pattern:
+        return None
+
+    time_field = os.environ.get("OPENSEARCH_TIME_FIELD", "@timestamp")
     cid = connection_id.strip()
 
-    # Build time filter: prefer a tight window derived from the UUID timestamp
     uuid_dt = _uuid1_to_datetime(cid)
     if uuid_dt:
         from datetime import timedelta
@@ -790,8 +1065,6 @@ def query_bot_engine_default_logs(
     else:
         time_filter = None
 
-    # The connectionId field is not indexed, so we fetch in batches and
-    # filter in Python.  Use search_after for pagination.
     batch_size = 2000
     matched: list[dict[str, Any]] = []
     search_after = None
@@ -819,21 +1092,9 @@ def query_bot_engine_default_logs(
 
         for h in hits_list:
             src = h.get("_source") or {}
-            doc_cid = _extract_connection_id(src)
+            doc_cid = _extract_integration_manager_connection_id(src)
             if doc_cid == cid:
-                matched.append({
-                    "timestamp": _get_nested(src, "@timestamp") or src.get("@timestamp") or "",
-                    "level": src.get("level") or "",
-                    "tenant_name": str(_get_nested(src, "rawLog.tenantName") or src.get("tenant_name") or ""),
-                    "api_name": str(_get_nested(src, "rawLog.data.apiName") or ""),
-                    "method_name": str(_get_nested(src, "rawLog.data.methodName") or ""),
-                    "connection_id": doc_cid,
-                    "message": str(src.get("msg") or src.get("message") or ""),
-                    "error_code": str(_get_nested(src, "rawLog.data.error.code") or _get_nested(src, "rawLog.data.status") or ""),
-                    "error_stack": str(_get_nested(src, "rawLog.data.error.stack") or _get_nested(src, "rawLog.data.stack") or ""),
-                    "error_message": str(_get_nested(src, "rawLog.data.error.message") or _get_nested(src, "rawLog.data.message") or ""),
-                    "_raw": src,
-                })
+                matched.append(_flatten_integration_manager_log(src, doc_cid))
                 if len(matched) >= max_logs:
                     break
 
@@ -847,11 +1108,308 @@ def query_bot_engine_default_logs(
     return {"total": len(matched), "logs": matched, "scanned": scanned}
 
 
+def _flatten_stream_server_log(src: dict, doc_cid: str) -> dict[str, Any]:
+    """Normalise a stream-server _source doc to the same shape as bot-engine / IM rows.
+
+    Stream-server logs are richer: they contain bot turns (action.type/subtype), caller
+    speech (rawLog.data.data.text), STT events, and connection/Twilio metadata in addition
+    to errors.  We surface the most useful fields for the table view and keep the full
+    `_raw` so the Analyse step (and JSON download) still see everything.
+    """
+    raw = src.get("rawLog") if isinstance(src.get("rawLog"), dict) else {}
+    d = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+
+    module_name = str(raw.get("moduleName") or src.get("moduleName") or "")
+
+    action_type = ""
+    action_subtype = ""
+    action_text = ""
+    a = d.get("action") if isinstance(d, dict) else None
+    if isinstance(a, dict):
+        action_type = str(a.get("type") or "")
+        action_subtype = str(a.get("subtype") or "")
+        ad = a.get("data")
+        if isinstance(ad, dict):
+            action_text = str(ad.get("text") or ad.get("utterance") or ad.get("targetName") or ad.get("extension") or "")
+        nested = a.get("action") if isinstance(a, dict) else None
+        if isinstance(nested, dict):
+            if not action_type:
+                action_type = str(nested.get("type") or "")
+            if not action_subtype:
+                action_subtype = str(nested.get("subtype") or "")
+            nd = nested.get("data")
+            if isinstance(nd, dict) and not action_text:
+                action_text = str(nd.get("text") or nd.get("utterance") or "")
+
+    inner = d.get("data") if isinstance(d, dict) else None
+    speech_text = ""
+    if isinstance(inner, dict):
+        speech_text = str(inner.get("text") or inner.get("utterance") or "")
+
+    err_code = str(_get_nested(src, "rawLog.data.error.name") or _get_nested(src, "rawLog.data.error.code") or "")
+    err_msg = str(_get_nested(src, "rawLog.data.error.message") or "")
+    err_stack = str(_get_nested(src, "rawLog.data.error.stack") or "")
+
+    line_msg = str(src.get("msg") or src.get("message") or "")
+
+    apt_field = os.environ.get(
+        "OPENSEARCH_STREAM_SERVER_APT_FIELD",
+        "rawLog.data.action.event.client.data.name",
+    )
+    apt_name = str(
+        _get_nested(src, apt_field)
+        or _get_nested(src, "rawLog.data.action.event.client.data.name")
+        or _get_nested(src, "rawLog.data.event.client.data.name")
+        or _get_nested(src, "rawLog.data.client.name")
+        or ""
+    )
+
+    conn_field = os.environ.get(
+        "OPENSEARCH_STREAM_SERVER_CONNECTION_FIELD",
+        "rawLog.data.action.event.connection.id",
+    )
+    connection_id = str(
+        _get_nested(src, conn_field)
+        or _get_nested(src, "rawLog.data.action.event.connection.id")
+        or _get_nested(src, "rawLog.data.event.connection.id")
+        or _get_nested(src, "rawLog.data.connection.id")
+        or _get_nested(src, "rawLog.data.connectionId")
+        or ""
+    )
+
+    return {
+        "timestamp": _get_nested(src, "@timestamp") or src.get("@timestamp") or src.get("time") or "",
+        "level": src.get("level") or _get_nested(src, "rawLog.level") or "",
+        "tenant_name": str(_get_nested(src, "rawLog.tenantName") or src.get("tenant_name") or ""),
+        "module_name": module_name,
+        "action_type": action_type,
+        "action_subtype": action_subtype,
+        "action_text": action_text,
+        "speech_text": speech_text,
+        "context_id": doc_cid,
+        "apt_name": apt_name,
+        "connection_id": connection_id,
+        "request_id": str(_get_nested(src, "rawLog.data.requestId") or ""),
+        "message": line_msg,
+        "error_code": err_code,
+        "error_message": err_msg,
+        "error_stack": err_stack,
+        "_raw": src,
+    }
+
+
+def query_stream_server_default_logs(
+    context_id: str | None = None,
+    time_minutes: int | None = None,
+    index: str | None = None,
+    max_logs: int = 1000,
+    time_from: str | None = None,
+    time_to: str | None = None,
+    apt_name: str | None = None,
+    connection_id: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Query stream-server default logs by rawLog.data.contextId, APT identifier
+    (rawLog.data.action.event.client.data.name), and/or Connection ID
+    (rawLog.data.action.event.connection.id).  At least one of ``context_id``,
+    ``apt_name``, or ``connection_id`` is required.
+
+    Unlike bot-engine / IM logs (where connectionId is in _source only and not searchable),
+    contextId, APT name, and the stream-server connection.id are indexed and searchable
+    via match_phrase, so we issue a direct filter query — much faster than a scan.
+
+    Time window:
+      - If ``time_from`` / ``time_to`` are provided, uses absolute boundaries.
+      - Else if ``time_minutes`` > 0, uses now-Xm to now.
+      - Else searches the last 30 days (sensible default since contextId is UUIDv4
+        and has no embedded timestamp we can derive a tight window from).
+
+    Returns None when OPENSEARCH_STREAM_SERVER_INDEX is not set; otherwise
+    { total, logs[], scanned }.
+    """
+    cid = (context_id or "").strip()
+    apt = (apt_name or "").strip()
+    conn = (connection_id or "").strip()
+    if not cid and not apt and not conn:
+        return {
+            "total": 0,
+            "logs": [],
+            "error": "context_id, apt_name, or connection_id is required",
+        }
+
+    client = _get_client()
+    if not client:
+        return None
+
+    index_pattern = index or os.environ.get("OPENSEARCH_STREAM_SERVER_INDEX", "").strip()
+    if not index_pattern:
+        # Fall back to the main stream-server index used for alerts (OPENSEARCH_INDEX)
+        index_pattern = os.environ.get("OPENSEARCH_INDEX", "").strip()
+    if not index_pattern:
+        return None
+
+    time_field = os.environ.get("OPENSEARCH_TIME_FIELD", "@timestamp")
+    context_field = os.environ.get(
+        "OPENSEARCH_STREAM_SERVER_CONTEXT_FIELD",
+        "rawLog.data.contextId",
+    )
+    apt_field = os.environ.get(
+        "OPENSEARCH_STREAM_SERVER_APT_FIELD",
+        "rawLog.data.action.event.client.data.name",
+    )
+    conn_field = os.environ.get(
+        "OPENSEARCH_STREAM_SERVER_CONNECTION_FIELD",
+        "rawLog.data.action.event.connection.id",
+    )
+
+    if time_from and time_to:
+        time_filter = {"range": {time_field: {"gte": time_from, "lte": time_to}}}
+    elif time_minutes and time_minutes > 0:
+        time_filter = _time_range(time_field, time_minutes)
+    else:
+        time_filter = _time_range(time_field, 60 * 24 * 30)  # default: last 30 days
+
+    filters: list[dict[str, Any]] = [time_filter]
+    if cid:
+        filters.append({"match_phrase": {context_field: cid}})
+    if apt:
+        filters.append({"match_phrase": {apt_field: apt}})
+    if conn:
+        filters.append({"match_phrase": {conn_field: conn}})
+
+    fetch_size = min(max(1, int(max_logs or 1000)), 10000)
+    query_body: dict[str, Any] = {
+        "track_total_hits": True,
+        "size": fetch_size,
+        "query": {"bool": {"filter": filters}},
+        "sort": [{time_field: {"order": "asc"}}, {"_id": "asc"}],
+    }
+
+    # APT-only fetches across a wide window can be expensive; allow a longer
+    # per-request timeout (still capped by OPENSEARCH_REQUEST_TIMEOUT_LONG).
+    long_timeout = _request_timeout(default=120.0)
+    if "_REQUEST_TIMEOUT_LONG" in os.environ:
+        try:
+            long_timeout = float(os.environ["OPENSEARCH_REQUEST_TIMEOUT_LONG"])
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        res = client.search(
+            index=index_pattern,
+            body=query_body,
+            ignore_unavailable=True,
+            request_timeout=long_timeout,
+        )
+    except Exception as exc:
+        # opensearchpy.exceptions.ConnectionTimeout subclasses TransportError;
+        # we keep the import lazy so this module still loads if the client is missing.
+        try:
+            from opensearchpy.exceptions import ConnectionTimeout as _OSConnTimeout
+        except Exception:
+            _OSConnTimeout = None  # type: ignore
+        is_timeout = bool(_OSConnTimeout and isinstance(exc, _OSConnTimeout))
+        if not is_timeout:
+            is_timeout = "timed out" in str(exc).lower() or "ReadTimeoutError" in str(exc)
+        if is_timeout:
+            hint = (
+                f"OpenSearch read timed out after {long_timeout:.0f}s. "
+                "Narrow the time window, add a Context ID or Connection ID alongside APT, "
+                "or raise OPENSEARCH_REQUEST_TIMEOUT (Settings → OpenSearch)."
+            )
+            return {"total": 0, "logs": [], "error": hint, "timeout": True}
+        return {"total": 0, "logs": [], "error": str(exc)}
+
+    hits = (res or {}).get("hits", {})
+    total = hits.get("total") or {}
+    if isinstance(total, dict):
+        total = total.get("value", 0)
+
+    matched: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for h in hits.get("hits", []):
+        src = h.get("_source") or {}
+        doc_cid = str(_get_nested(src, context_field) or "")
+        if not doc_cid and cid:
+            doc_cid = cid
+        flat = _flatten_stream_server_log(src, doc_cid)
+        # Stream-server logs are often duplicated by Fluent Bit / OpenSearch replicas;
+        # de-dup on (timestamp, msg, request_id) so the table view is readable.
+        # When filtering by APT/Connection ID only, request_id may be empty for some lines;
+        # fall back to context_id, then connection_id, so different sessions don't
+        # collapse into one row.
+        key = (
+            str(flat.get("timestamp") or ""),
+            str(flat.get("message") or ""),
+            str(
+                flat.get("request_id")
+                or flat.get("context_id")
+                or flat.get("connection_id")
+                or ""
+            ),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        matched.append(flat)
+
+    matched.sort(key=lambda l: l.get("timestamp") or "")
+
+    return {"total": total, "logs": matched, "scanned": len(hits.get("hits", []))}
+
+
+def check_stream_server_default_index() -> dict[str, Any]:
+    """Check if the stream-server default-logs index is configured and reachable."""
+    index_pattern = os.environ.get("OPENSEARCH_STREAM_SERVER_INDEX", "").strip()
+    if not index_pattern:
+        # Fall back to the main alerts index so this agent works out-of-the-box
+        # when the dedicated env var hasn't been set yet.
+        index_pattern = os.environ.get("OPENSEARCH_INDEX", "").strip()
+        if not index_pattern:
+            return {
+                "configured": False,
+                "connected": False,
+                "message": "OPENSEARCH_STREAM_SERVER_INDEX (or OPENSEARCH_INDEX) not set in .env",
+            }
+        fallback = True
+    else:
+        fallback = False
+    client = _get_client()
+    if not client:
+        return {"configured": True, "connected": False, "message": "OpenSearch client not available"}
+    try:
+        res = client.count(index=index_pattern, body={"query": {"match_all": {}}}, ignore_unavailable=True)
+        count = res.get("count", 0)
+        out = {"configured": True, "connected": True, "index": index_pattern, "doc_count": count}
+        if fallback:
+            out["fallback"] = True
+            out["message"] = "Using OPENSEARCH_INDEX (set OPENSEARCH_STREAM_SERVER_INDEX to override)"
+        return out
+    except Exception as e:
+        return {"configured": True, "connected": False, "index": index_pattern, "error": str(e)}
+
+
 def check_bot_engine_index() -> dict[str, Any]:
     """Check if the bot engine OpenSearch index is configured and reachable."""
     index_pattern = os.environ.get("OPENSEARCH_BOT_ENGINE_INDEX", "").strip()
     if not index_pattern:
         return {"configured": False, "connected": False, "message": "OPENSEARCH_BOT_ENGINE_INDEX not set in .env"}
+    client = _get_client()
+    if not client:
+        return {"configured": True, "connected": False, "message": "OpenSearch client not available"}
+    try:
+        res = client.count(index=index_pattern, body={"query": {"match_all": {}}}, ignore_unavailable=True)
+        count = res.get("count", 0)
+        return {"configured": True, "connected": True, "index": index_pattern, "doc_count": count}
+    except Exception as e:
+        return {"configured": True, "connected": False, "index": index_pattern, "error": str(e)}
+
+
+def check_integration_manager_index() -> dict[str, Any]:
+    """Check if the Integration Manager OpenSearch index is configured and reachable."""
+    index_pattern = os.environ.get("OPENSEARCH_INTEGRATION_MANAGER_INDEX", "").strip()
+    if not index_pattern:
+        return {"configured": False, "connected": False, "message": "OPENSEARCH_INTEGRATION_MANAGER_INDEX not set in .env"}
     client = _get_client()
     if not client:
         return {"configured": True, "connected": False, "message": "OpenSearch client not available"}

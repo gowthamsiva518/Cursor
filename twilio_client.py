@@ -402,12 +402,14 @@ def query_alerts(
     time_minutes: int = 60,
     limit: int = 200,
     tenant_names: list[str] | None = None,
+    error_code_filter: str | None = None,
 ) -> dict[str, Any]:
     """
     Fetch Twilio error logs (Monitor Alerts) within the time window.
 
     When *tenant_names* is provided, only queries the subaccounts whose
     namespace matches one of the given tenant names.
+    When *error_code_filter* is provided, only alerts with that error code are returned.
     """
     client = _get_client()
     if client is None:
@@ -475,17 +477,24 @@ def query_alerts(
             alerts.extend(sub_alerts)
             accounts_checked.append(name)
 
+    if error_code_filter:
+        alerts = [a for a in alerts if a.get("error_code") == error_code_filter]
+
     alerts.sort(key=lambda a: a.get("date_created", ""), reverse=True)
 
     error_codes: dict[str, int] = {}
+    by_account: dict[str, int] = {}
     for a in alerts:
         code = a.get("error_code") or "unknown"
         error_codes[code] = error_codes.get(code, 0) + 1
+        acct = a.get("account") or a.get("namespace") or "unknown"
+        by_account[acct] = by_account.get(acct, 0) + 1
 
     return {
         "alerts": alerts,
         "total_alerts": len(alerts),
         "error_codes": error_codes,
+        "by_account": by_account,
         "accounts_checked": accounts_checked,
     }
 

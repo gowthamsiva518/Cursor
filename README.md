@@ -16,7 +16,7 @@ Slack Channel (alerts)
     +---> OpenSearch ........... error counts, impacted tenants, log download
     +---> Kubernetes (kubectl) . bot engine pod restart detection (by age)
     +---> Twilio API ........... call logs, failed calls, subaccount analysis
-    +---> OpenAI GPT ........... AI-powered RCA summary
+    +---> OpenAI-compatible API . AI-powered RCA summary
     |
     v
 [Slack Notifier]  --> RCA report + downloadable file + @support_team tagging
@@ -28,7 +28,7 @@ Slack Channel (alerts)
 - **OpenSearch Integration** — Query error counts by error code, tenant, and time window. Download up to 10,000 raw error logs as CSV.
 - **Kubernetes Pod Monitoring** — Detect recent bot engine pod restarts using pod age within the analysis time window.
 - **Twilio Call Analysis** — Parallel analysis of 100+ subaccounts. Identifies failed/busy calls, maps namespaces, and counts errors per tenant.
-- **AI-Powered RCA Summary** — Uses OpenAI GPT-4o-mini to generate executive summaries covering bot engine restarts, analysis, and Twilio findings.
+- **AI-Powered RCA Summary** — Uses an OpenAI-compatible Chat Completions API (configure model host in Settings) for executive summaries covering bot engine restarts, analysis, and Twilio findings.
 - **Slack Integration**
   - Auto-monitors a Slack channel for alert keywords and triggers RCA automatically
   - Posts RCA as a threaded reply with Block Kit formatting
@@ -60,7 +60,8 @@ Key variables:
 | `OPENSEARCH_INDEX` | Index pattern (e.g. `default.stream-server.*`) |
 | `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` | Basic auth credentials |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | Twilio main account |
-| `OPENAI_API_KEY` | OpenAI API key for AI summaries |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | LLM — RCA summaries, Email & ticket rephrase, and Bot Engine **Analyse Logs** (OpenAI, Groq, OpenRouter, Ollama, etc.; see `.env.example`) |
+| `DATABASE_URL` or `DB_HOST` / `DB_USER` / … | Optional — **Database check** (PostgreSQL) in the assistant UI; see `.env.example` |
 | `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-...`) |
 | `SLACK_APP_TOKEN` | Slack app-level token (`xapp-...`) for Socket Mode |
 | `SLACK_CHANNEL` | Target Slack channel (e.g. `#stream-server-alerts`) |
@@ -86,7 +87,8 @@ The app starts on `http://127.0.0.1:5000` with:
 ├── opensearch_client.py      # OpenSearch queries, tenant list, error log download
 ├── lens_client.py            # Kubernetes pod restart detection via kubectl
 ├── twilio_client.py          # Twilio call log analysis, subaccount management
-├── ai_summarizer.py          # OpenAI GPT RCA summarization
+├── ai_summarizer.py          # OpenAI-compatible Chat Completions (RCA, rephrase, log analysis)
+├── db_client.py              # PostgreSQL connectivity check for Database UI
 ├── slack_notifier.py         # Slack message builder, file upload, critical alerts
 ├── slack_listener.py         # Slack Socket Mode listener for auto-RCA
 ├── stream_server_alerts.yaml # Alert scenarios and decision rules config

@@ -17,3 +17,13 @@ env/
 # Next.js
 .next/
 node_modules/
+
+# Runtime logs
+*.log
+
+# Local SQLite state
+data/*.db
+
+# Ad-hoc OpenSearch log dumps
+connection-*-logs.json
+context-*-logs.json

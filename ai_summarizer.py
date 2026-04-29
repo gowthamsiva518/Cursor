@@ -1,123 +1,516 @@
 """
-AI-powered RCA summarizer supporting Google Gemini, OpenAI ChatGPT, and Anthropic Claude.
+AI: OpenAI-compatible Chat Completions for RCA summaries, email/ticket rephrase, and log analysis.
 
-Configure via environment:
-  LLM_PROVIDER       - Force provider: "gemini", "openai", or "anthropic" (default: auto-detect)
-  GEMINI_API_KEY     - Google Gemini API key
-  GEMINI_MODEL       - Gemini model (default: gemini-2.5-flash)
-  OPENAI_API_KEY     - OpenAI API key
-  OPENAI_MODEL       - OpenAI model (default: gpt-4o-mini)
-  ANTHROPIC_API_KEY  - Anthropic API key
-  ANTHROPIC_MODEL    - Anthropic model (default: claude-sonnet-4-20250514)
+This app cannot use Cursor's in-editor chat as an HTTP backend. You choose the model host:
+
+  OPENAI_API_KEY   — Bearer token (OpenAI, Groq, OpenRouter, etc.). Often omitted for local Ollama.
+  OPENAI_BASE_URL  — default https://api.openai.com/v1
+                     Groq API: https://api.groq.com/openai/v1 (not console.groq.com / playground)
+                     Ollama: http://127.0.0.1:11434/v1
+  OPENAI_MODEL     — default gpt-4o-mini on OpenAI; on Groq, OpenAI-style gpt-* ids are replaced by
+                     a Groq production model (override with OPENAI_MODEL_GROQ or set OPENAI_MODEL to a Groq id)
+  OPENAI_MAX_RETRIES — retries on 429/502/503 (default 5, max 8)
+  OPENAI_VERIFY_SSL — set to 0 to skip TLS verify (corporate proxy / broken Windows CA store only; insecure)
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
+from urllib.parse import urlparse
+
+
+def _openai_base_url() -> str:
+    """
+    Resolve the Chat Completions base URL (no trailing slash, no /chat/completions suffix).
+
+    Groq's browser console/playground URLs are not the API and often cause SSL errors;
+    we normalize those to https://api.groq.com/openai/v1.
+    """
+    default = "https://api.openai.com/v1"
+    raw = os.environ.get("OPENAI_BASE_URL", default).strip().rstrip("/")
+    if not raw:
+        return default.rstrip("/")
+    lower = raw.lower()
+    if "console.groq.com" in lower or "/playground" in lower:
+        return "https://api.groq.com/openai/v1"
+    if "groq.com" in lower and "api.groq.com" not in lower:
+        return "https://api.groq.com/openai/v1"
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    host = (parsed.hostname or "").lower()
+    if host == "api.groq.com":
+        path = (parsed.path or "").rstrip("/")
+        if path != "/openai/v1":
+            return "https://api.groq.com/openai/v1"
+    return raw.rstrip("/")
+
+
+# When OPENAI_BASE_URL is Groq, OpenAI product ids (gpt-*) are not valid; use a GroqCloud chat model.
+_GROQ_DEFAULT_CHAT_MODEL = "llama-3.3-70b-versatile"
+
+
+def _openai_model_name() -> str:
+    """Effective chat model: Groq-safe default if base URL is Groq but OPENAI_MODEL is still an OpenAI id."""
+    raw = os.environ.get("OPENAI_MODEL", "").strip()
+    base = _openai_base_url().lower()
+    if "groq.com" not in base:
+        return raw or "gpt-4o-mini"
+    if not raw or raw.startswith("gpt-"):
+        return os.environ.get("OPENAI_MODEL_GROQ", _GROQ_DEFAULT_CHAT_MODEL).strip() or _GROQ_DEFAULT_CHAT_MODEL
+    return raw
+
+
+def _openai_configured() -> bool:
+    if os.environ.get("OPENAI_API_KEY", "").strip():
+        return True
+    base = _openai_base_url().lower()
+    if "127.0.0.1" in base or "localhost" in base or "ollama" in base:
+        return True
+    return False
 
 
 def _get_provider() -> str:
-    """Determine which LLM provider to use."""
-    forced = os.environ.get("LLM_PROVIDER", "").strip().lower()
-    if forced in ("gemini", "openai", "anthropic"):
-        return forced
-    if os.environ.get("GEMINI_API_KEY", "").strip():
-        return "gemini"
-    if os.environ.get("OPENAI_API_KEY", "").strip():
-        return "openai"
-    if os.environ.get("ANTHROPIC_API_KEY", "").strip():
-        return "anthropic"
-    return "none"
+    """Return 'openai' when Chat Completions can run, else 'none'."""
+    return "openai" if _openai_configured() else "none"
+
+
+def log_analysis_meta_for_status() -> dict[str, str]:
+    """Fields merged into /api/bot-engine/status for the UI."""
+    ok = _get_provider() != "none"
+    return {
+        "log_analysis_provider": "openai" if ok else "none",
+        "log_analysis_provider_label": "OpenAI-compatible API" if ok else "Not configured",
+    }
+
+
+def _estimate_tokens(text: str) -> int:
+    """Cheap token estimate (~4 chars/token works for English + log lines)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+def _llm_tpm_budget() -> int:
+    """
+    Per-request token budget (input + output) the upstream model is willing
+    to accept *right now*.
+
+    Tunable via LLM_TPM_BUDGET. If unset:
+      - Groq (api.groq.com): default 5500 — Groq's free/on-demand tier is
+        ~6000 TPM for llama-3.1-8b-instant; we leave 500 headroom for the
+        200-token system overhead Groq adds.
+      - Anything else: 60000 (well below OpenAI's 200k+ context but enough
+        for our ~5k-token prompts).
+    """
+    raw = os.environ.get("LLM_TPM_BUDGET", "").strip()
+    if raw:
+        try:
+            v = int(raw)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    base = _openai_base_url().lower()
+    if "groq.com" in base:
+        return 5500
+    return 60000
+
+
+_LOG_ENTRIES_MARKER = "=== LOG ENTRIES ==="
+_COMBINED_SECTION_MARKERS = (
+    "=== BOT ENGINE LOGS ===",
+    "=== INTEGRATION MANAGER LOGS ===",
+    "=== STREAM SERVER LOGS ===",
+)
+
+
+def _score_log_line(line: str, idx: int, n: int) -> int:
+    """Errors/warnings highest, then first/last entries, then info."""
+    s = 0
+    ll = line.lower()
+    if "error_code=" in ll or "error_msg=" in ll:
+        s += 1000
+    if "level=50" in line or "level=fatal" in ll or "level=error" in ll:
+        s += 800
+    if "level=40" in line or "level=warn" in ll:
+        s += 400
+    if idx < 10 or idx >= n - 10:
+        s += 100  # keep boundaries
+    return s
+
+
+def _split_combined_sections(body: str) -> list[tuple[str, list[str]]]:
+    """Split the combined-RCA body into (section_header_block, lines) pairs.
+
+    Returns at least one entry. The first entry's header_block contains every line up to (and
+    including) the first known section marker; subsequent entries each carry one section.
+    """
+    markers = list(_COMBINED_SECTION_MARKERS)
+    indices: list[tuple[int, str]] = []
+    for marker in markers:
+        i = body.find(marker)
+        if i != -1:
+            indices.append((i, marker))
+    indices.sort()
+    if not indices:
+        return [("", [ln for ln in body.split("\n")])]
+    sections: list[tuple[str, list[str]]] = []
+    head = body[: indices[0][0]]
+    sections.append((head, []))  # head-only block (identifiers, summary)
+    for n, (start, marker) in enumerate(indices):
+        end = indices[n + 1][0] if n + 1 < len(indices) else len(body)
+        chunk = body[start:end]
+        first_nl = chunk.find("\n")
+        header = chunk[: first_nl + 1] if first_nl != -1 else chunk
+        rest = chunk[first_nl + 1 :] if first_nl != -1 else ""
+        lines = [ln for ln in rest.split("\n")]
+        sections.append((header, lines))
+    return sections
+
+
+def _trim_lines_to_budget(lines: list[str], token_budget: int) -> tuple[list[str], int]:
+    """Pick lines that fit ``token_budget`` (errors/warns first, then boundaries). Returns (kept_in_orig_order, dropped_count)."""
+    nonempty = [(i, ln) for i, ln in enumerate(lines) if ln.strip()]
+    if not nonempty or token_budget <= 0:
+        return [], len(nonempty)
+    n = len(nonempty)
+    scored = [(orig_i, ln, _score_log_line(ln, idx, n)) for idx, (orig_i, ln) in enumerate(nonempty)]
+    scored.sort(key=lambda t: (-t[2], t[0]))
+    kept_idx: set[int] = set()
+    used = 0
+    for orig_i, ln, _s in scored:
+        ltok = _estimate_tokens(ln) + 1
+        if used + ltok > token_budget:
+            continue
+        kept_idx.add(orig_i)
+        used += ltok
+    kept = [ln for i, ln in nonempty if i in kept_idx]
+    dropped = n - len(kept)
+    return kept, dropped
+
+
+def _trim_user_prompt_to_budget(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+    budget: int | None = None,
+) -> tuple[str, int, dict[str, int]]:
+    """
+    Trim ``user_prompt`` so estimated total tokens (system + user + max_tokens
+    + 256 safety) <= ``budget``. Returns (new_user_prompt, adjusted_max_tokens, info).
+
+    Two prompt shapes are supported:
+      1) Single-source: keeps the header before "=== LOG ENTRIES ===", trims lines after.
+      2) Combined RCA: detects "=== BOT ENGINE LOGS ===", "=== INTEGRATION MANAGER LOGS ===",
+         "=== STREAM SERVER LOGS ===" and trims each section's lines proportionally to its size,
+         preserving section headers + errors/warnings first.
+    """
+    if budget is None:
+        budget = _llm_tpm_budget()
+    safety = 256
+    sys_t = _estimate_tokens(system_prompt)
+    cur_t = _estimate_tokens(user_prompt)
+    total = sys_t + cur_t + max_tokens + safety
+    info = {
+        "estimated_total": total,
+        "system_tokens": sys_t,
+        "user_tokens_before": cur_t,
+        "user_tokens_after": cur_t,
+        "max_tokens_before": max_tokens,
+        "max_tokens_after": max_tokens,
+        "budget": budget,
+        "trimmed_lines": 0,
+        "kept_lines": 0,
+        "mode": "noop",
+    }
+    if total <= budget:
+        return user_prompt, max_tokens, info
+
+    # Step 1: cap max_tokens so we always leave at least 800 tokens for the answer.
+    overflow = total - budget
+    if overflow > 0 and max_tokens > 800:
+        shrink = min(max_tokens - 800, overflow)
+        max_tokens = max_tokens - shrink
+        info["max_tokens_after"] = max_tokens
+        total -= shrink
+
+    if total <= budget:
+        info["mode"] = "max_tokens_only"
+        return user_prompt, max_tokens, info
+
+    # Step 2: detect combined-RCA shape (3 source sections) vs single-source.
+    is_combined = sum(1 for m in _COMBINED_SECTION_MARKERS if m in user_prompt) >= 2
+
+    if is_combined:
+        info["mode"] = "combined"
+        sections = _split_combined_sections(user_prompt)
+        head_block = sections[0][0]  # IDENTIFIERS + SOURCE SUMMARY
+        head_t = _estimate_tokens(head_block)
+        per_section_overhead = sum(_estimate_tokens(hdr) for hdr, _ln in sections[1:]) + len(sections[1:]) * 16
+        ellipsis_overhead = len(sections[1:]) * 32
+        available = budget - sys_t - max_tokens - safety - head_t - per_section_overhead - ellipsis_overhead
+        if available < 0:
+            available = 0
+        # Allocate to each section by line count so big sources lose more lines.
+        line_counts = [max(1, len([ln for ln in lines if ln.strip()])) for _hdr, lines in sections[1:]]
+        total_lines = sum(line_counts) or 1
+        per_section_budget = [max(150, int(available * c / total_lines)) for c in line_counts]
+        # Reduce floor if budget can't satisfy them all.
+        if sum(per_section_budget) > available and available > 0:
+            scale = available / sum(per_section_budget)
+            per_section_budget = [max(80, int(b * scale)) for b in per_section_budget]
+
+        rebuilt = [head_block.rstrip("\n")] if head_block.strip() else []
+        total_dropped = 0
+        total_kept = 0
+        for (header, lines), bud in zip(sections[1:], per_section_budget):
+            kept, dropped = _trim_lines_to_budget(lines, bud)
+            total_dropped += dropped
+            total_kept += len(kept)
+            block = header.rstrip("\n")
+            if kept:
+                block += "\n" + "\n".join(kept)
+            if dropped > 0:
+                block += f"\n... [trimmed {dropped} lower-priority entries to fit token budget; errors/warnings preserved] ..."
+            rebuilt.append(block)
+        new_user = "\n\n".join(rebuilt) + "\n"
+        info["user_tokens_after"] = _estimate_tokens(new_user)
+        info["trimmed_lines"] = total_dropped
+        info["kept_lines"] = total_kept
+        return new_user, max_tokens, info
+
+    # Single-source path: trim below the LOG ENTRIES marker.
+    if _LOG_ENTRIES_MARKER in user_prompt:
+        head, _, tail = user_prompt.partition(_LOG_ENTRIES_MARKER)
+        head_with_marker = head + _LOG_ENTRIES_MARKER + "\n"
+    else:
+        head_with_marker = ""
+        tail = user_prompt
+
+    lines = [ln for ln in tail.split("\n") if ln.strip()]
+    if not lines:
+        return user_prompt, max_tokens, info
+
+    head_t = _estimate_tokens(head_with_marker)
+    available_for_lines = budget - sys_t - max_tokens - safety - head_t - 64
+    if available_for_lines < 0:
+        available_for_lines = 0
+
+    kept, dropped = _trim_lines_to_budget(lines, available_for_lines)
+    if dropped > 0:
+        kept = list(kept) + [
+            f"... [truncated to fit token budget: dropped {dropped} of {len(lines)} log entries; errors/warnings preserved] ..."
+        ]
+
+    new_user = head_with_marker + "\n".join(kept)
+    info["user_tokens_after"] = _estimate_tokens(new_user)
+    info["trimmed_lines"] = dropped
+    info["kept_lines"] = len(kept)
+    info["mode"] = "single_source"
+    return new_user, max_tokens, info
+
+
+def _parse_provider_limit(msg: str) -> int | None:
+    """Extract the upstream's reported TPM Limit when the body says 'Limit X, Requested Y'."""
+    import re as _re
+    m = _re.search(r"Limit\s+(\d+)\s*,\s*Requested\s+(\d+)", msg)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def llm_call_for_log_analysis(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> tuple[str, str]:
+    """
+    Run log analysis with progressive trim retries on HTTP 413 / rate_limit_exceeded.
+
+    Strategy:
+      attempt 1: trim to default TPM budget, full max_tokens
+      attempt 2 (on 413): trim to 0.80 * provider-reported limit, halve max_tokens
+      attempt 3 (still 413): trim to 0.55 * provider-reported limit, max_tokens=800
+
+    Returns (response_text, provider_key).
+    """
+    if _get_provider() == "none":
+        raise RuntimeError(
+            "Log analysis needs an LLM. Set OPENAI_API_KEY in Settings, or OPENAI_BASE_URL to a "
+            "local OpenAI-compatible server (e.g. Ollama at http://127.0.0.1:11434/v1)."
+        )
+
+    trimmed_user, eff_max_tokens, _info = _trim_user_prompt_to_budget(
+        system_prompt, user_prompt, max_tokens
+    )
+    last_exc: RuntimeError | None = None
+    last_msg: str = ""
+    last_limit: int | None = None
+    try:
+        text = llm_call(system_prompt, trimmed_user, eff_max_tokens)
+        return text, "openai"
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "HTTP 413" not in msg and "rate_limit_exceeded" not in msg:
+            raise
+        last_exc = exc
+        last_msg = msg
+        last_limit = _parse_provider_limit(msg)
+
+    # ----- attempt 2: aggressively re-trim
+    base_budget = last_limit if last_limit else _llm_tpm_budget()
+    new_budget = max(1024, int(base_budget * 0.80))
+    retrimmed_user, retry_max_tokens, retry_info = _trim_user_prompt_to_budget(
+        system_prompt, user_prompt, max(800, eff_max_tokens // 2), budget=new_budget
+    )
+    try:
+        text = llm_call(system_prompt, retrimmed_user, retry_max_tokens)
+        return text, "openai"
+    except RuntimeError as exc2:
+        msg2 = str(exc2)
+        if "HTTP 413" not in msg2 and "rate_limit_exceeded" not in msg2:
+            raise
+        last_exc = exc2
+        last_msg = msg2
+        last_limit = _parse_provider_limit(msg2) or last_limit
+
+    # ----- attempt 3: extreme shrink (errors/warnings only)
+    limit3 = last_limit or _llm_tpm_budget()
+    extreme_budget = max(900, int(limit3 * 0.55))
+    final_user, final_max_tokens, final_info = _trim_user_prompt_to_budget(
+        system_prompt, user_prompt, 800, budget=extreme_budget
+    )
+    try:
+        text = llm_call(system_prompt, final_user, final_max_tokens)
+        return text, "openai"
+    except RuntimeError as exc3:
+        msg3 = str(exc3)
+        if "HTTP 413" in msg3 or "rate_limit_exceeded" in msg3:
+            kept = final_info.get("kept_lines", retry_info.get("kept_lines", 0))
+            dropped = final_info.get("trimmed_lines", retry_info.get("trimmed_lines", 0))
+            hint = (
+                f" Auto-trimmed to {kept} lines (dropped {dropped}) and retried 3 times "
+                f"(final budget {extreme_budget} TPM, max_tokens {final_max_tokens}), but the provider "
+                "still rejected the request. Either fetch fewer logs (tighten the time window or "
+                "add Context ID), switch to a model with a larger TPM (Groq llama-3.3-70b-versatile "
+                "via OPENAI_MODEL_GROQ, or set OPENAI_BASE_URL to OpenAI / Ollama), or upgrade your "
+                "Groq tier at https://console.groq.com/settings/billing."
+            )
+            raise RuntimeError(str(exc3) + hint) from exc3
+        raise
+
+
+def _requests_verify_bundle():
+    """
+    What to pass as requests' verify=... argument.
+    Uses certifi's Mozilla CA bundle when verification is on (helps Windows Python).
+    """
+    if os.environ.get("OPENAI_VERIFY_SSL", "1").strip().lower() in ("0", "false", "no"):
+        return False
+    try:
+        import certifi
+
+        return certifi.where()
+    except ImportError:
+        return True
+
+
+def _http_retry_sleep_seconds(resp, attempt: int) -> float:
+    ra = (resp.headers.get("Retry-After") or "").strip()
+    if ra:
+        try:
+            return min(120.0, float(ra))
+        except ValueError:
+            pass
+    if resp.status_code == 429:
+        return min(120.0, max(8.0, 2.0**attempt * 4.0))
+    return min(32.0, 2.0**attempt)
 
 
 def llm_call(system_prompt: str, user_prompt: str, max_tokens: int = 1200) -> str:
     """
-    Call the configured LLM provider with a system + user prompt.
-    Raises RuntimeError if no provider is configured or the call fails.
+    Call an OpenAI-compatible /v1/chat/completions endpoint.
+    Retries on HTTP 429 / 502 / 503.
     """
-    provider = _get_provider()
-
-    if provider == "gemini":
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY not configured. Add it to .env or Settings.")
-        import requests as _req
-
-        model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-        payload = {
-            "system_instruction": {"parts": [{"text": system_prompt}]},
-            "contents": [{"parts": [{"text": user_prompt}]}],
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": max_tokens,
-            },
-        }
-        resp = _req.post(url, json=payload, timeout=120, verify=False)
-        resp.raise_for_status()
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            raise RuntimeError("Gemini returned no candidates: " + json.dumps(data.get("error", data)))
-        return candidates[0]["content"]["parts"][0]["text"].strip()
-
-    elif provider == "openai":
-        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY not configured. Add it to .env or Settings.")
-        import requests as _req
-
-        model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip()
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        payload = {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.3,
-            "max_tokens": max_tokens,
-        }
-        resp = _req.post(url, json=payload, headers=headers, timeout=120, verify=False)
-        resp.raise_for_status()
-        data = resp.json()
-        choices = data.get("choices", [])
-        if not choices:
-            raise RuntimeError("OpenAI returned no choices: " + json.dumps(data.get("error", data)))
-        return choices[0]["message"]["content"].strip()
-
-    elif provider == "anthropic":
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-        if not api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY not configured. Add it to .env or Settings.")
-        try:
-            import anthropic
-        except ImportError:
-            raise RuntimeError("anthropic package not installed (pip install anthropic)")
-
-        model_name = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514").strip()
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=model_name,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-            temperature=0.3,
-            max_tokens=max_tokens,
-        )
-        return response.content[0].text.strip()
-
-    else:
+    if not _openai_configured():
         raise RuntimeError(
-            "No LLM configured. Add GEMINI_API_KEY (free), OPENAI_API_KEY, or ANTHROPIC_API_KEY in Settings."
+            "No LLM configured. Set OPENAI_API_KEY in .env or Settings (e.g. from platform.openai.com), "
+            "or set OPENAI_BASE_URL to a local OpenAI-compatible server such as "
+            "http://127.0.0.1:11434/v1 for Ollama."
         )
+    import requests as _req
+
+    base = _openai_base_url()
+    model = _openai_model_name()
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    url = f"{base}/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": max_tokens,
+    }
+
+    try:
+        max_retries = int(os.environ.get("OPENAI_MAX_RETRIES", "5") or "5")
+    except ValueError:
+        max_retries = 5
+    max_retries = max(1, min(8, max_retries))
+    retry_statuses = {429, 502, 503}
+    verify = _requests_verify_bundle()
+
+    last_status: int | None = None
+    last_body = ""
+    for attempt in range(max_retries):
+        try:
+            resp = _req.post(url, json=payload, headers=headers, timeout=120, verify=verify)
+        except _req.exceptions.SSLError as exc:
+            raise RuntimeError(
+                "SSL certificate verification failed when calling the LLM (e.g. Groq). "
+                "Try: pip install -U certifi requests, restart the app, and retry. "
+                "If you are on a corporate VPN/proxy that inspects HTTPS, set OPENAI_VERIFY_SSL=0 "
+                "in Settings (disables TLS verification; use only if you accept that risk). "
+                f"Details: {exc}"
+            ) from exc
+        last_status = resp.status_code
+        if resp.ok:
+            data = resp.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise RuntimeError("LLM returned no choices: " + json.dumps(data)[:800])
+            msg = choices[0].get("message") or {}
+            content = msg.get("content")
+            if content is None:
+                raise RuntimeError("LLM returned empty message: " + json.dumps(choices[0])[:800])
+            return str(content).strip()
+        try:
+            last_body = (resp.text or "")[:1200]
+        except Exception:
+            last_body = ""
+        if resp.status_code in retry_statuses and attempt < max_retries - 1:
+            time.sleep(_http_retry_sleep_seconds(resp, attempt))
+            continue
+        break
+
+    hint = ""
+    if last_status in retry_statuses:
+        hint = " The service may be rate-limited or temporarily unavailable — wait and retry, or try another model."
+    elif last_status == 404 and "model_not_found" in (last_body or "").lower():
+        hint = (
+            " The model id is wrong for this API host — set OPENAI_MODEL to one your provider lists "
+            "(Groq: e.g. llama-3.3-70b-versatile or llama-3.1-8b-instant; OpenAI: gpt-4o-mini)."
+        )
+    raise RuntimeError(f"LLM API error HTTP {last_status}.{hint} Details: {last_body or '(empty body)'}")
 
 
 def summarize_rca(rca_data: dict[str, Any]) -> str | None:
     """
-    Send RCA data to the configured LLM and return a formatted executive summary.
+    Send RCA data to the configured model and return a formatted executive summary.
     Returns None if no LLM is configured or the call fails.
     """
     if _get_provider() == "none":

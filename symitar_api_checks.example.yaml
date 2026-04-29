@@ -1,0 +1,17 @@
+# Example batch file for: python symitar_api_agent.py run-batch --checks symitar_api_checks.example.yaml
+#
+# Optional: pull SYM_* from the IM ConfigMap before running (same as Lens → ConfigMaps).
+# configmap_namespace: icu-aicc-prod-im
+# configmap_name: integration-manager-env-icu-aicc-prod-im   # default if omitted
+#
+# Replace api_endpoint, fin_dto, operation, and request_xml with values from your
+# Postman "Core: SymXchange" collection. request_xml is only the inner payload;
+# DeviceInformation and Credentials are injected by the agent.
+
+checks:
+  - name: example_read_placeholder
+    api_endpoint: AccountService.svc
+    fin_dto: account
+    operation: getAccount
+    request_xml: |
+      <AccountNumber>000000000</AccountNumber>
