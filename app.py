@@ -281,6 +281,16 @@ def api_settings():
             "opensearch_user": _env("OPENSEARCH_USER") or "(not set)",
             "opensearch_password": _mask(_env("OPENSEARCH_PASSWORD")),
         },
+        "nlp_server_logs": {
+            "title": "NLP Server Default Logs",
+            "opensearch_url": _env("OPENSEARCH_URL"),
+            "nlp_server_index": _env("OPENSEARCH_NLP_SERVER_INDEX") or "(not set)",
+            "connection_field": _env("OPENSEARCH_NLP_SERVER_CONNECTION_FIELD", "metadata.connection_id"),
+            "request_field": _env("OPENSEARCH_NLP_SERVER_REQUEST_FIELD", "metadata.request_id"),
+            "time_field": _env("OPENSEARCH_TIME_FIELD", "@timestamp"),
+            "opensearch_user": _env("OPENSEARCH_USER") or "(not set)",
+            "opensearch_password": _mask(_env("OPENSEARCH_PASSWORD")),
+        },
         "twilio": {
             "title": "Twilio Log Analysis",
             "account_sid": _mask(_env("TWILIO_ACCOUNT_SID")),
@@ -338,6 +348,8 @@ EDITABLE_ENV_KEYS = {
     "OPENSEARCH_BOT_ENGINE_CONTEXT_FIELD", "OPENSEARCH_INTEGRATION_MANAGER_INDEX",
     "OPENSEARCH_STREAM_SERVER_INDEX", "OPENSEARCH_STREAM_SERVER_CONTEXT_FIELD",
     "OPENSEARCH_STREAM_SERVER_APT_FIELD", "OPENSEARCH_STREAM_SERVER_CONNECTION_FIELD",
+    "OPENSEARCH_NLP_SERVER_INDEX", "OPENSEARCH_NLP_SERVER_CONNECTION_FIELD",
+    "OPENSEARCH_NLP_SERVER_REQUEST_FIELD",
     "SLACK_ENABLED", "SLACK_CHANNEL", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN",
     "SLACK_LISTENER_ENABLED", "SLACK_ALERT_KEYWORDS", "SLACK_ALERT_TIME_MINUTES",
     "SLACK_ERROR_THRESHOLD",
@@ -1272,6 +1284,200 @@ def api_integration_manager_analyse():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@app.route("/api/session-rca/analyse", methods=["POST"])
+def api_session_rca_analyse():
+    """Session RCA agent — runs deterministic detectors over BE+IM+SS logs and
+    produces three drafts (structured RCA, client-facing ticket, internal eng ticket).
+
+    When ``question`` is supplied, the LLM answers it grounded in the merged log
+    facts. When empty, it produces a generic structured RCA.
+
+    Request body (JSON):
+      mode: "fetch" (use OpenSearch via connection_id) or "paste" (use provided JSON).
+      connection_id: UUIDv1 connectionId (required for fetch; optional label for paste).
+      question: optional free-form user question (e.g. "why did the call drop?").
+      bot_engine_logs / integration_manager_logs / stream_server_logs: arrays of raw
+                _source docs (paste mode).
+      related_calls: optional list of {connection_id, bot_engine_logs,
+                integration_manager_logs, stream_server_logs} for paste mode.
+      correlate: bool — when fetch mode, auto-find related calls in OpenSearch (default true).
+      correlate_window_minutes: int — search ±N minutes around the primary's UUID timestamp (default 10).
+      include_stream_server: bool — fetch SS logs (slow + often empty for IVR sessions);
+                default false. Auto-enabled when ``question`` mentions transcript/drop/
+                transfer/audio/speak/say/hear/silence keywords.
+      use_llm: bool — generate prose with the configured LLM (default true). Falls back to
+               the deterministic facts block when no provider is configured or the call fails.
+
+    Response: see session_rca.analyse() return shape, plus a ``timings_ms`` block.
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    import session_rca
+
+    data = request.get_json() or {}
+    mode = (data.get("mode") or "fetch").strip().lower()
+    use_llm = data.get("use_llm", True) is not False
+    correlate = data.get("correlate", True) is not False
+    question = (data.get("question") or "").strip()
+    try:
+        correlate_window_minutes = max(1, min(120, int(data.get("correlate_window_minutes") or 10)))
+    except (TypeError, ValueError):
+        correlate_window_minutes = 10
+
+    # SS fetch is opt-in — it's the slowest source and empty for most IVR/auth sessions.
+    # We auto-enable it when the user's question hints at an SS-relevant concern.
+    include_ss = data.get("include_stream_server")
+    if include_ss is None:
+        ss_keywords = (
+            "drop", "dropp", "hangup", "hung up", "hang up", "transfer", "audio",
+            "speak", "spoke", "said", "say ", "say,", "say.", "hear", "heard",
+            "silence", "silent", "transcript", "intent", "understand", "understood",
+            "stt", "twilio", "stream",
+        )
+        ql = question.lower()
+        include_ss = any(kw in ql for kw in ss_keywords)
+    include_ss = bool(include_ss)
+
+    primary: dict
+    related: list[dict] = []
+    timings: dict = {}
+
+    if mode == "paste":
+        primary = {
+            "connection_id": (data.get("connection_id") or "").strip(),
+            "be_logs": data.get("bot_engine_logs") or [],
+            "im_logs": data.get("integration_manager_logs") or [],
+            "ss_logs": data.get("stream_server_logs") or [],
+        }
+        for r in data.get("related_calls") or []:
+            related.append({
+                "connection_id": (r.get("connection_id") or "").strip(),
+                "be_logs": r.get("bot_engine_logs") or [],
+                "im_logs": r.get("integration_manager_logs") or [],
+                "ss_logs": r.get("stream_server_logs") or [],
+            })
+        if not (primary["be_logs"] or primary["im_logs"] or primary["ss_logs"]):
+            return jsonify({"ok": False, "error": "paste mode requires at least one of bot_engine_logs, integration_manager_logs, stream_server_logs"}), 400
+    elif mode == "fetch":
+        cid = (data.get("connection_id") or "").strip()
+        if not cid:
+            return jsonify({"ok": False, "error": "connection_id is required for fetch mode"}), 400
+        try:
+            from opensearch_client import (
+                find_related_auth_connections,
+                query_bot_engine_default_logs,
+                query_integration_manager_default_logs,
+                query_stream_server_default_logs,
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"OpenSearch client unavailable: {exc}"}), 500
+
+        # 60-min upper bound is plenty for IVR auth flows and async IM callbacks
+        # while cutting the BE/IM scan window from the default ±2 h roughly in
+        # half — biggest wall-clock win on busy 100M+ doc indexes. Call duration
+        # >60 min is exceedingly rare; users can fall back to paste mode if needed.
+        FETCH_WINDOW_MINUTES = 60
+
+        def _fetch_one(cid_local: str, want_ss: bool) -> dict:
+            """Fetch BE + IM (+optional SS) for a single connection_id in parallel.
+            Returns counts and per-source timings under ``_fetch_meta``."""
+            def _timed(fn, *args, **kwargs):
+                t = time.time()
+                try:
+                    res = fn(*args, **kwargs) or {}
+                except Exception:
+                    res = {}
+                return res, int((time.time() - t) * 1000)
+
+            tasks: dict = {}
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                tasks["be"] = ex.submit(
+                    _timed, query_bot_engine_default_logs,
+                    connection_id=cid_local, max_window_minutes=FETCH_WINDOW_MINUTES,
+                )
+                tasks["im"] = ex.submit(
+                    _timed, query_integration_manager_default_logs,
+                    connection_id=cid_local, max_window_minutes=FETCH_WINDOW_MINUTES,
+                )
+                if want_ss:
+                    tasks["ss"] = ex.submit(_timed, query_stream_server_default_logs, connection_id=cid_local)
+            out: dict = {"connection_id": cid_local, "be_logs": [], "im_logs": [], "ss_logs": []}
+            meta: dict = {}
+            for key, fut in tasks.items():
+                try:
+                    res, took_ms = fut.result()
+                except Exception:
+                    res, took_ms = {}, 0
+                out[f"{key}_logs"] = res.get("logs") or []
+                meta[f"{key}_ms"] = took_ms
+                meta[f"{key}_count"] = len(out[f"{key}_logs"])
+            out["_fetch_meta"] = meta
+            return out
+
+        t0 = time.time()
+        primary_res = _fetch_one(cid, include_ss)
+        primary = primary_res
+        timings["primary_fetch_ms"] = int((time.time() - t0) * 1000)
+        if isinstance(primary_res.get("_fetch_meta"), dict):
+            timings["primary_per_source"] = primary_res.pop("_fetch_meta")
+
+        if not (primary["be_logs"] or primary["im_logs"] or primary["ss_logs"]):
+            return jsonify({"ok": False, "error": "no logs found for the supplied connection_id"}), 404
+
+        if correlate:
+            t1 = time.time()
+            sig = session_rca.extract_signals(
+                primary["be_logs"], primary["im_logs"], primary["ss_logs"]
+            )
+            phone_raw = (sig.get("metadata") or {}).get("user_phone_raw") or ""
+            tenant = (sig.get("metadata") or {}).get("tenant") or ""
+            rel_cids: list[str] = []
+            if phone_raw:
+                try:
+                    rel_cids = find_related_auth_connections(
+                        user_phone=phone_raw,
+                        tenant=tenant,
+                        around_connection_id=cid,
+                        window_minutes=correlate_window_minutes,
+                    ) or []
+                except Exception:
+                    rel_cids = []
+            rel_cids = [r for r in rel_cids if r and r != cid][:5]
+            timings["correlate_lookup_ms"] = int((time.time() - t1) * 1000)
+
+            if rel_cids:
+                t2 = time.time()
+                # Fan out one fetch per related cid in parallel; each fetch internally
+                # also parallelises its BE/IM/SS sub-queries so total in-flight workers
+                # = N * 3, capped at 12 to avoid hammering OpenSearch.
+                with ThreadPoolExecutor(max_workers=min(len(rel_cids), 4)) as ex:
+                    futs = [ex.submit(_fetch_one, r, include_ss) for r in rel_cids]
+                    for fut in futs:
+                        try:
+                            blk = fut.result()
+                        except Exception:
+                            continue
+                        blk.pop("_fetch_meta", None)
+                        if blk["be_logs"] or blk["im_logs"] or blk["ss_logs"]:
+                            related.append(blk)
+                timings["related_fetch_ms"] = int((time.time() - t2) * 1000)
+                timings["related_count"] = len(related)
+            else:
+                timings["related_count"] = 0
+    else:
+        return jsonify({"ok": False, "error": "mode must be 'fetch' or 'paste'"}), 400
+
+    try:
+        t3 = time.time()
+        result = session_rca.analyse(primary, related=related, question=question, use_llm=use_llm)
+        timings["analyse_ms"] = int((time.time() - t3) * 1000)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    timings["include_stream_server"] = include_ss
+    return jsonify({"ok": True, "timings_ms": timings, **result})
+
+
 @app.route("/api/stream-server-logs/status")
 def api_stream_server_logs_status():
     """Check if the stream-server default-logs index is configured and reachable."""
@@ -1866,6 +2072,7 @@ def _normalize_be(logs: list) -> list:
             "error_code": log.get("error_code", "") or "",
             "error_message": log.get("error_message", "") or "",
             "message": log.get("message", "") or "",
+            "payload_summary": log.get("payload_summary", "") or "",
         })
     return out
 
@@ -1883,6 +2090,7 @@ def _normalize_im(logs: list) -> list:
             "error_code": log.get("error_code", "") or "",
             "error_message": log.get("error_message", "") or "",
             "message": log.get("message", "") or "",
+            "payload_summary": log.get("payload_summary", "") or "",
         })
     return out
 
@@ -1905,17 +2113,84 @@ def _normalize_ss(logs: list) -> list:
             "error_code": log.get("error_code", "") or "",
             "error_message": log.get("error_message", "") or "",
             "message": log.get("message", "") or "",
+            "payload_summary": "",
+        })
+    return out
+
+
+def _normalize_nl(logs: list) -> list:
+    """Normalise NLP-server records into the merged-feed shape so the LLM can
+    cite them inline with BE/IM/SS rows.  NLP rows are LLM-trace events
+    (function_active / top_level / function_initial parses), not operational
+    errors, so we surface them as INFO-severity rows whose payload captures the
+    template_type, the recognised input text, and the LLM's structured output.
+    """
+    out = []
+    for i, log in enumerate(logs, 1):
+        level_n = _to_level_n(log.get("level"))
+        # NLP records are usually 'INFO' strings; treat unknown/missing as INFO.
+        if level_n == 0:
+            level_n = 30
+        tt = (log.get("template_type") or "").strip()
+        text_in = (log.get("text") or "").strip()
+        action_out = (log.get("action") or "").strip()
+        ad = (log.get("action_data") or "").strip()
+        llm_out = (log.get("llm_output") or "").strip()
+        exp = (log.get("experience_name") or log.get("experience_id") or "").strip()
+        param = (log.get("active_parameter") or "").strip()
+        bits: list[str] = []
+        if tt:
+            bits.append(tt)
+        if exp:
+            bits.append(f"exp={exp}")
+        if param and param.lower() != "none":
+            bits.append(f"slot={_cap(param, 60)}")
+        if text_in:
+            bits.append(f"input='{_cap(text_in, 120)}'")
+        if action_out:
+            bits.append(f"→ action={action_out}")
+        if ad and ad not in ("{}", "null"):
+            bits.append(f"data={_cap(ad, 120)}")
+        if llm_out and llm_out not in ad:
+            bits.append(f"llm={_cap(llm_out, 120)}")
+        payload = " | ".join(bits)
+        out.append({
+            "source": "NLP Server", "src": "NL", "idx": i,
+            "ts": log.get("timestamp", ""), "ts_sort": _ts_sort_key(log.get("timestamp", "")),
+            "level_n": level_n, "severity": _severity_label(level_n),
+            "api": tt, "method": exp,
+            "module": "nlp-server", "action": action_out,
+            "speech": text_in, "bot_text": "",
+            "error_code": "", "error_message": "",
+            "message": "", "payload_summary": payload,
         })
     return out
 
 
 def _entry_summary(e: dict) -> str:
     bits = []
+    payload = (e.get("payload_summary") or "").strip()
     if e["src"] in ("BE", "IM"):
-        if e["api"]:
-            bits.append(f"api={_short_text(e['api'], 80)}")
-        if e["method"]:
-            bits.append(f"method={_short_text(e['method'], 60)}")
+        if payload:
+            bits.append(payload)
+        else:
+            if e["api"]:
+                bits.append(f"api={_short_text(e['api'], 80)}")
+            if e["method"]:
+                bits.append(f"method={_short_text(e['method'], 60)}")
+    elif e["src"] == "NL":
+        # NLP records are LLM-trace events; the precomputed payload_summary
+        # already carries template_type / experience / slot / input / action,
+        # which is exactly what the LLM needs in-line.
+        if payload:
+            bits.append(payload)
+        else:
+            if e["api"]:
+                bits.append(f"template={e['api']}")
+            if e["action"]:
+                bits.append(f"action={e['action']}")
+            if e["speech"]:
+                bits.append(f'input: "{_short_text(e["speech"], 100)}"')
     else:  # SS
         if e["module"]:
             bits.append(f"module={_short_text(e['module'], 60)}")
@@ -1929,7 +2204,7 @@ def _entry_summary(e: dict) -> str:
         bits.append(f"error_code={e['error_code']}")
     if e["error_message"]:
         bits.append(f'error: "{_short_text(e["error_message"], 160)}"')
-    elif e["message"] and not (e["speech"] or e["bot_text"]):
+    elif e["message"] and not (e["speech"] or e["bot_text"]) and not payload:
         bits.append(f'msg: "{_short_text(e["message"], 140)}"')
     return " | ".join(bits) if bits else "(no detail)"
 
@@ -2216,6 +2491,166 @@ def _format_verdict(merged: list) -> str:
     return "\n".join(out)
 
 
+def _build_question_log_feed(
+    be_logs: list,
+    im_logs: list,
+    ss_logs: list,
+    max_entries: int = 400,
+    nl_logs: list | None = None,
+) -> tuple[str, dict]:
+    """Build a single chronologically-merged compact text feed across BE/IM/SS/NLP for LLM consumption.
+
+    Returns (feed_text, stats) where stats has per-source counts and the trimmed-flag.
+    """
+    nl_logs = nl_logs or []
+    be = _normalize_be(be_logs)
+    im = _normalize_im(im_logs)
+    ss = _normalize_ss(ss_logs)
+    nl = _normalize_nl(nl_logs)
+    merged = sorted(be + im + ss + nl, key=lambda e: (e["ts_sort"], e["src"]))
+    trimmed = len(merged) > max_entries
+    if trimmed:
+        merged = merged[:max_entries]
+    lines: list = []
+    for i, e in enumerate(merged, 1):
+        lines.append(
+            f"[{i}] {e['ts'] or '?'} {e['source']} {e['severity']} :: {_entry_summary(e)}"
+        )
+    stats = {
+        "be_count": len(be_logs),
+        "im_count": len(im_logs),
+        "ss_count": len(ss_logs),
+        "nl_count": len(nl_logs),
+        "merged_count": len(merged),
+        "trimmed": trimmed,
+        "max_entries": max_entries,
+    }
+    return "\n".join(lines), stats
+
+
+def _render_question_driven_analysis(
+    be_logs: list,
+    im_logs: list,
+    ss_logs: list,
+    identifiers: dict,
+    question: str,
+    nl_logs: list | None = None,
+) -> tuple[str, str]:
+    """LLM-backed question-driven analysis across BE/IM/SS (and optionally NLP) logs.
+
+    Returns (analysis_markdown, provider_key). Raises RuntimeError on LLM failure
+    so the caller can decide to fall back to the deterministic analyser.
+    """
+    from ai_summarizer import llm_call_for_log_analysis
+
+    feed, stats = _build_question_log_feed(be_logs, im_logs, ss_logs, max_entries=400, nl_logs=nl_logs)
+    if not feed.strip():
+        feed = "(no log entries provided across any of the sources)"
+
+    sources_summary = (
+        f"Bot Engine entries: {stats['be_count']}\n"
+        f"Integration Manager entries: {stats['im_count']}\n"
+        f"Stream Server entries: {stats['ss_count']}\n"
+        f"NLP Server entries: {stats.get('nl_count', 0)}\n"
+        f"Merged entries presented below: {stats['merged_count']}"
+        + (f" (trimmed from full set; first {stats['max_entries']} kept)" if stats["trimmed"] else "")
+    )
+
+    user_prompt = (
+        "=== IDENTIFIERS ===\n"
+        f"Connection ID: {identifiers.get('connection_id') or '(not provided)'}\n"
+        f"Context ID: {identifiers.get('context_id') or '(not provided)'}\n"
+        f"APT identifier: {identifiers.get('apt_name') or '(not provided)'}\n\n"
+        "=== SOURCE COUNTS ===\n"
+        f"{sources_summary}\n\n"
+        "=== USER QUESTION ===\n"
+        f"{question.strip()}\n\n"
+        "=== MERGED LOG FEED (sorted by timestamp; one line per event) ===\n"
+        f"{feed}\n"
+    )
+
+    system_prompt = (
+        "You are a senior platform engineer triaging a single voice/chat session across three log "
+        "sources: Bot Engine (orchestration & integration-manager-client), Integration Manager "
+        "(Symitar/SES/Twilio/mesh integrations server-side), Stream Server (Twilio SIP, "
+        "Speechmatics STT, TTS, action execution), and NLP Server (LLM intent/parameter parsing — "
+        "function_active / top_level / function_initial templates). Answer the USER QUESTION using "
+        "ONLY evidence visible in the merged log feed.\n\n"
+        "API SEMANTICS — read this carefully before interpreting any log line:\n"
+        "- A Bot Engine row whose payload starts with `message.create email -> <to> from <from> "
+        "  ses-id=...` is the IM-client's record that the IM service forwarded the email to AWS SES "
+        "  and SES returned a Message-Id. This proves SES ACCEPTED the message; it does NOT prove "
+        "  the message was DELIVERED to the recipient mailbox. Bounces, complaints, suppression "
+        "  hits, recipient-MX rejection, spam filtering, and broken distribution lists all happen "
+        "  AFTER this log line and would NOT appear in any of the three log indexes here.\n"
+        "- A Bot Engine row whose payload starts with `message.create sms -> +<E.164> sid=SM...` "
+        "  is an SMS send via Twilio Programmable Messaging. Twilio queueing != delivery to handset.\n"
+        "- A Bot Engine row whose payload starts with `message.validate phone-lookup +<E.164> -> "
+        "  isVoip=… isMobile=… isLandline=…` is a Twilio Lookup / phone-validation call. It is "
+        "  NEVER about email validation or callback validation. Treat it as a phone-number check.\n"
+        "- A Bot Engine row with `auth.info session-bootstrap` is a session/auth bootstrap call. "
+        "  It is unrelated to email, SMS, or callback business logic.\n"
+        "- Integration Manager rows whose `msg` is `Controller Success` / `SOAP API Success` only "
+        "  prove the IM HTTP/SOAP route returned 200 to its caller. They do NOT prove anything "
+        "  about downstream provider delivery.\n"
+        "- Stream Server rows with action `io/voice` carry the bot's TTS output. Action `io/parse` "
+        "  / `io/gather` carry caller speech. `channel/pause` is a deliberate inter-prompt pause.\n"
+        "- NLP Server rows are LLM-trace records: `function_active` parses the input for the "
+        "  currently-active experience/parameter; `top_level` classifies the input against the "
+        "  global function catalogue; `function_initial` parses the input as the entry parse for a "
+        "  candidate target function. Each row carries the recognised input text, the LLM's raw "
+        "  JSON output, and the materialised `action`/`action_data`. A `system.input_error` on the "
+        "  Stream Server side often correlates with three NLP rows (active/top_level/initial) that "
+        "  produced disagreeing decisions on the same `request_id` — that's a conflict-resolution "
+        "  signature, not an out-of-grammar problem.\n\n"
+        "STRICT RULES:\n"
+        "- Cite each piece of evidence with the `[N]` feed index and copy the timestamp, source, "
+        "  and the literal payload snippet you are relying on. Never paraphrase a payload into a "
+        "  meaning the log itself does not contain.\n"
+        "- CHANNEL MATCHING — if the question asks about a specific channel or artefact (email, "
+        "  SMS, voice prompt, transfer, callback, validation), only rows whose payload is for that "
+        "  exact channel count as supporting evidence. A `message.create email -> ...` row CANNOT "
+        "  support a claim about SMS, and vice versa. A `message.validate` (phone lookup) CANNOT "
+        "  support a claim that an email or SMS was sent. If the question is about action X and no "
+        "  row in the feed actually performs X, the Answer is NO (or INCONCLUSIVE if a partial "
+        "  attempt is visible) — do not stretch unrelated rows to fill an evidence bullet.\n"
+        "- A bot prompt like 'Shall I send you a text…' is an OFFER, not a send. Treat 'offer' and "
+        "  'send' as distinct events; an offer without a matching `message.create sms` row means "
+        "  the send did not happen on the platform.\n"
+        "- If the question asks about delivery / receipt / inbox / bounce / complaint, REMEMBER "
+        "  these logs end at SES/Twilio acceptance. Say so explicitly and route the user to the "
+        "  correct off-platform source (AWS SES event destinations / suppression list, Twilio "
+        "  message status, recipient mail-server message-trace, distribution-list membership, "
+        "  SPF/DKIM/DMARC).\n"
+        "- Do NOT claim a row 'processed the callback request' or 'validated the callback request' "
+        "  unless the payload literally says that. `auth.info` is bootstrap. `message.validate` is "
+        "  phone-lookup. `message.create email` is the actual notification send.\n"
+        "- EVIDENCE BREVITY — emit ONLY bullets that directly support or refute the answer; never "
+        "  pad with rows you describe as 'unrelated'. 1–6 bullets is normal; 0 bullets is fine if "
+        "  the feed is genuinely silent on the question (then Verdict = INCONCLUSIVE).\n"
+        "- If the merged feed has no row that directly bears on the question, your Verdict MUST be "
+        "  INCONCLUSIVE (or NO if absence of the row IS the answer) with HIGH confidence in the "
+        "  absence claim and LOW confidence in everything else.\n"
+        "- Be terse. No filler. No restatement of the question.\n\n"
+        "Output strictly in this Markdown structure with these exact section headers:\n"
+        "**Answer**\n"
+        "<2-5 sentence direct answer that respects the API semantics above>\n\n"
+        "**Evidence**\n"
+        "- [N] @ <timestamp> — <source> — <verbatim payload fragment and what it actually proves>\n"
+        "- ... (3-10 bullets, ordered by relevance to the question)\n\n"
+        "**Cross-Source Correlation**\n"
+        "- 1-3 bullets joining BE↔IM↔SS where relevant (skip the section entirely if N/A).\n\n"
+        "**Off-platform checks**\n"
+        "- Concrete next steps outside these logs to confirm or extend the answer.\n\n"
+        "**Verdict**\n"
+        "ANSWER: <YES | NO | PARTIAL | INCONCLUSIVE> — <one-sentence justification grounded in cited evidence>\n"
+        "Confidence: <HIGH | MEDIUM | LOW> — <why, in one phrase>\n"
+    )
+
+    text, provider_key = llm_call_for_log_analysis(system_prompt, user_prompt, max_tokens=2200)
+    return text, provider_key
+
+
 def _render_combined_analysis(be_logs: list, im_logs: list, ss_logs: list, identifiers: dict) -> str:
     """Deterministic cross-source RCA — no LLM, no token limits, fully offline."""
     be = _normalize_be(be_logs)
@@ -2266,23 +2701,411 @@ def _quick_stats(logs: list, src: str) -> dict:
     return out
 
 
-@app.route("/api/log-analyser/analyse-all", methods=["POST"])
-def api_log_analyser_analyse_all():
-    """Cross-source RCA across Bot Engine + Integration Manager + Stream Server logs.
+@app.route("/api/nlp-server/status")
+def api_nlp_server_status():
+    """Check if the nlp-server default-logs index is configured and reachable."""
+    from ai_summarizer import log_analysis_meta_for_status
 
-    Uses a built-in deterministic analyser — no LLM, no API keys, no token limits.
+    try:
+        from opensearch_client import check_nlp_server_default_index
+        result = check_nlp_server_default_index()
+        meta = log_analysis_meta_for_status()
+        return jsonify({"ok": True, **result, **meta})
+    except Exception as e:
+        meta = log_analysis_meta_for_status()
+        return jsonify({"ok": False, "configured": False, "connected": False, "error": str(e), **meta})
+
+
+@app.route("/api/nlp-server/logs", methods=["POST"])
+def api_nlp_server_logs():
+    """Fetch nlp-server default logs by metadata.connection_id and/or metadata.request_id."""
+    from opensearch_client import query_nlp_server_default_logs
+
+    data = request.get_json() or {}
+    connection_id = (data.get("connection_id") or "").strip()
+    request_id = (data.get("request_id") or "").strip()
+    if not connection_id and not request_id:
+        return jsonify({
+            "ok": False,
+            "error": "connection_id or request_id is required",
+        }), 400
+
+    time_minutes = 0
+    try:
+        time_minutes = max(0, int(data.get("time_minutes", 0)))
+    except (TypeError, ValueError):
+        pass
+
+    max_logs = min(int(data.get("max_logs", 1000)), 10000)
+    time_from = (data.get("time_from") or "").strip() or None
+    time_to = (data.get("time_to") or "").strip() or None
+
+    result = query_nlp_server_default_logs(
+        connection_id=connection_id or None,
+        request_id=request_id or None,
+        time_minutes=time_minutes if time_minutes > 0 else None,
+        max_logs=max_logs,
+        time_from=time_from,
+        time_to=time_to,
+    )
+    if result is None:
+        return jsonify({
+            "ok": False,
+            "error": "NLP-server index not configured (set OPENSEARCH_NLP_SERVER_INDEX in .env / Settings)",
+        }), 400
+    if result.get("error"):
+        status_code = 504 if result.get("timeout") else 500
+        return jsonify({"ok": False, **result}), status_code
+
+    return jsonify({
+        "ok": True,
+        "total": result.get("total", 0),
+        "scanned": result.get("scanned", 0),
+        "logs": result.get("logs", []),
+    })
+
+
+@app.route("/api/download/nlp-server-logs", methods=["POST"])
+def api_download_nlp_server_logs():
+    """Download nlp-server default logs by connection_id / request_id as CSV or JSON."""
+    import csv
+    import io
+    import json as json_mod
+    from opensearch_client import query_nlp_server_default_logs
+
+    data = request.get_json() or {}
+    connection_id = (data.get("connection_id") or "").strip()
+    request_id = (data.get("request_id") or "").strip()
+    fmt = (data.get("format") or "csv").lower()
+    if not connection_id and not request_id:
+        return jsonify({"ok": False, "error": "connection_id or request_id is required"}), 400
+
+    time_minutes = 0
+    try:
+        time_minutes = max(0, int(data.get("time_minutes", 0)))
+    except (TypeError, ValueError):
+        pass
+
+    max_logs = min(int(data.get("max_logs", 10000)), 10000)
+    time_from = (data.get("time_from") or "").strip() or None
+    time_to = (data.get("time_to") or "").strip() or None
+
+    result = query_nlp_server_default_logs(
+        connection_id=connection_id or None,
+        request_id=request_id or None,
+        time_minutes=time_minutes if time_minutes > 0 else None,
+        max_logs=max_logs,
+        time_from=time_from,
+        time_to=time_to,
+    )
+    if result is None:
+        return jsonify({"ok": False, "error": "NLP-server index not configured"}), 400
+    if result.get("error"):
+        return jsonify({"ok": False, **result}), 500
+
+    logs = result.get("logs", [])
+    safe_id = (connection_id or request_id or "logs").replace("/", "_").replace("\\", "_")
+    base_name = f"nlp_server_logs_{safe_id}_{len(logs)}_rows"
+
+    if fmt == "json":
+        body = json_mod.dumps({"logs": logs, "total": result.get("total", 0)}, ensure_ascii=False, indent=2)
+        return Response(
+            body,
+            mimetype="application/json",
+            headers={"Content-Disposition": f"attachment; filename={base_name}.json"},
+        )
+
+    cols = [
+        "timestamp", "level", "tenant_name", "agent_name", "connection_id",
+        "session_id", "request_id", "template_type", "experience_id",
+        "experience_name", "input_id", "active_parameter", "text", "action",
+        "action_data", "llm_output", "model_id", "llm_time_ms",
+        "prompt_tokens", "completion_tokens", "total_tokens",
+    ]
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(cols)
+    for log in logs:
+        writer.writerow([log.get(c, "") if log.get(c) is not None else "" for c in cols])
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={base_name}.csv"},
+    )
+
+
+# Column orders for the combined ZIP — kept in lockstep with the per-source CSV
+# download endpoints so a downstream consumer can diff per-source CSVs against
+# the bundled CSVs and see identical structure.
+_COMBINED_BE_COLS = [
+    "timestamp", "level", "tenant_name", "connection_id", "context_id",
+    "api_name", "method_name", "error_code", "message", "error_message", "error_stack",
+]
+_COMBINED_IM_COLS = [
+    "timestamp", "level", "tenant_name", "connection_id",
+    "api_name", "method_name", "error_code", "message", "error_message", "error_stack",
+]
+_COMBINED_SS_COLS = [
+    "timestamp", "level", "tenant_name", "module_name",
+    "action_type", "action_subtype", "action_text", "speech_text",
+    "context_id", "apt_name", "connection_id", "request_id", "error_code",
+    "message", "error_message", "error_stack",
+]
+_COMBINED_NL_COLS = [
+    "timestamp", "level", "tenant_name", "agent_name", "connection_id",
+    "session_id", "request_id", "template_type", "experience_id",
+    "experience_name", "input_id", "active_parameter", "text", "action",
+    "action_data", "llm_output", "model_id", "llm_time_ms",
+    "prompt_tokens", "completion_tokens", "total_tokens",
+]
+
+
+def _combined_csv(rows: list, cols: list[str]) -> str:
+    """Render a list of dicts to a CSV string using the given column order.
+
+    Newlines in payload fields are flattened so spreadsheet tools don't choke
+    on multi-line cells (matches the per-source download behaviour).
     """
+    import csv
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(cols)
+    for log in rows or []:
+        out_row = []
+        for col in cols:
+            val = log.get(col, "")
+            if val is None:
+                val = ""
+            if isinstance(val, (dict, list)):
+                import json as _json
+                val = _json.dumps(val, ensure_ascii=False)
+            else:
+                val = str(val)
+            out_row.append(val.replace("\n", " ").replace("\r", ""))
+        writer.writerow(out_row)
+    return buf.getvalue()
+
+
+@app.route("/api/log-analyser/download-all", methods=["POST"])
+def api_log_analyser_download_all():
+    """Bundle all 4 sources' fetched logs into a single download.
+
+    Body:
+      bot_engine_logs, integration_manager_logs, stream_server_logs,
+      nlp_server_logs: arrays of already-fetched log rows (no OpenSearch query).
+      identifiers: { connection_id, context_id, apt_name } for the manifest.
+      format: "zip" (default) or "json".
+
+    Output:
+      - format=zip → ZIP of 4 CSVs (one per source, only included when non-empty)
+        + manifest.json + raw/<source>.json (full row dicts incl. _raw).
+      - format=json → single JSON file with all 4 arrays + identifiers.
+    """
+    import io
+    import json as json_mod
+    import zipfile
+    from datetime import datetime, timezone
+
     data = request.get_json() or {}
     be_logs = data.get("bot_engine_logs") or []
     im_logs = data.get("integration_manager_logs") or []
     ss_logs = data.get("stream_server_logs") or []
+    nl_logs = data.get("nlp_server_logs") or []
     identifiers = data.get("identifiers") or {}
+    fmt = (data.get("format") or "zip").lower()
 
-    if not isinstance(be_logs, list) or not isinstance(im_logs, list) or not isinstance(ss_logs, list):
-        return jsonify({"ok": False, "error": "bot_engine_logs, integration_manager_logs, stream_server_logs must be arrays"}), 400
+    arrays = {
+        "bot_engine_logs": be_logs,
+        "integration_manager_logs": im_logs,
+        "stream_server_logs": ss_logs,
+        "nlp_server_logs": nl_logs,
+    }
+    for k, v in arrays.items():
+        if not isinstance(v, list):
+            return jsonify({"ok": False, "error": f"{k} must be an array"}), 400
+    if not any(arrays.values()):
+        return jsonify({"ok": False, "error": "No logs provided across any source"}), 400
 
-    if not (be_logs or im_logs or ss_logs):
+    cid = (identifiers.get("connection_id") or "").strip()
+    ctxid = (identifiers.get("context_id") or "").strip()
+    apt = (identifiers.get("apt_name") or "").strip()
+    safe_id = (cid or ctxid or apt or "logs").replace("/", "_").replace("\\", "_")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    base_name = f"combined_logs_{safe_id}_{stamp}"
+
+    manifest = {
+        "title": "Cross-source Log Analyser bundle",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "identifiers": {
+            "connection_id": cid or None,
+            "context_id": ctxid or None,
+            "apt_name": apt or None,
+        },
+        "counts": {k: len(v) for k, v in arrays.items()},
+        "sources": {
+            "bot_engine_logs": {
+                "count": len(be_logs),
+                "csv_columns": _COMBINED_BE_COLS,
+                "description": "Bot Engine default logs (orchestration + IM-client).",
+            },
+            "integration_manager_logs": {
+                "count": len(im_logs),
+                "csv_columns": _COMBINED_IM_COLS,
+                "description": "Integration Manager default logs (Symitar/SES/Twilio/mesh server-side).",
+            },
+            "stream_server_logs": {
+                "count": len(ss_logs),
+                "csv_columns": _COMBINED_SS_COLS,
+                "description": "Stream Server default logs (Twilio SIP, Speechmatics STT, TTS, action exec).",
+            },
+            "nlp_server_logs": {
+                "count": len(nl_logs),
+                "csv_columns": _COMBINED_NL_COLS,
+                "description": "NLP Server logs (LLM-trace: function_active / top_level / function_initial parses).",
+            },
+        },
+    }
+
+    if fmt == "json":
+        body = json_mod.dumps({
+            "manifest": manifest,
+            **arrays,
+        }, ensure_ascii=False, indent=2)
+        return Response(
+            body,
+            mimetype="application/json",
+            headers={"Content-Disposition": f"attachment; filename={base_name}.json"},
+        )
+
+    # Default: ZIP
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json_mod.dumps(manifest, ensure_ascii=False, indent=2))
+
+        if be_logs:
+            zf.writestr("bot_engine.csv", _combined_csv(be_logs, _COMBINED_BE_COLS))
+            zf.writestr("raw/bot_engine.json", json_mod.dumps(be_logs, ensure_ascii=False, indent=2))
+        if im_logs:
+            zf.writestr("integration_manager.csv", _combined_csv(im_logs, _COMBINED_IM_COLS))
+            zf.writestr("raw/integration_manager.json", json_mod.dumps(im_logs, ensure_ascii=False, indent=2))
+        if ss_logs:
+            zf.writestr("stream_server.csv", _combined_csv(ss_logs, _COMBINED_SS_COLS))
+            zf.writestr("raw/stream_server.json", json_mod.dumps(ss_logs, ensure_ascii=False, indent=2))
+        if nl_logs:
+            zf.writestr("nlp_server.csv", _combined_csv(nl_logs, _COMBINED_NL_COLS))
+            zf.writestr("raw/nlp_server.json", json_mod.dumps(nl_logs, ensure_ascii=False, indent=2))
+
+        readme_lines = [
+            f"# Cross-source Log Analyser bundle — {safe_id}",
+            f"Generated: {manifest['generated_at_utc']}",
+            "",
+            "## Identifiers",
+            f"- Connection ID: {cid or '(not provided)'}",
+            f"- Context ID:    {ctxid or '(not provided)'}",
+            f"- APT name:      {apt or '(not provided)'}",
+            "",
+            "## Counts",
+            f"- Bot Engine:          {len(be_logs):,}",
+            f"- Integration Manager: {len(im_logs):,}",
+            f"- Stream Server:       {len(ss_logs):,}",
+            f"- NLP Server:          {len(nl_logs):,}",
+            "",
+            "## Files",
+            "- `<source>.csv` — flattened table view (newlines stripped from cells).",
+            "- `raw/<source>.json` — full per-row dicts including the original `_source` payload.",
+            "- `manifest.json` — machine-readable summary (counts + column orders + identifiers).",
+            "",
+            "## Tip",
+            "Re-import any of the JSONs into the Log Analyser via the Session RCA agent's",
+            "'Paste JSON' mode to re-run analysis without re-querying OpenSearch.",
+        ]
+        zf.writestr("README.md", "\n".join(readme_lines))
+
+    return Response(
+        buf.getvalue(),
+        mimetype="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={base_name}.zip"},
+    )
+
+
+@app.route("/api/log-analyser/analyse-all", methods=["POST"])
+def api_log_analyser_analyse_all():
+    """Cross-source RCA across Bot Engine + Integration Manager + Stream Server logs.
+
+    Two modes:
+      - `question` empty → deterministic built-in analyser (no LLM, no token limits).
+      - `question` set   → LLM answers the user's specific question with evidence cited
+                            from the merged log feed. Falls back to the deterministic
+                            analyser (with a note) if no LLM provider is configured or
+                            if the LLM call fails.
+    """
+    from ai_summarizer import _get_provider
+
+    data = request.get_json() or {}
+    be_logs = data.get("bot_engine_logs") or []
+    im_logs = data.get("integration_manager_logs") or []
+    ss_logs = data.get("stream_server_logs") or []
+    nl_logs = data.get("nlp_server_logs") or []
+    identifiers = data.get("identifiers") or {}
+    question = (data.get("question") or "").strip()
+
+    if (
+        not isinstance(be_logs, list)
+        or not isinstance(im_logs, list)
+        or not isinstance(ss_logs, list)
+        or not isinstance(nl_logs, list)
+    ):
+        return jsonify({"ok": False, "error": "bot_engine_logs, integration_manager_logs, stream_server_logs, nlp_server_logs must be arrays"}), 400
+
+    if not (be_logs or im_logs or ss_logs or nl_logs):
         return jsonify({"ok": False, "error": "At least one source must have logs to analyse"}), 400
+
+    sources_block = {
+        "bot_engine": {"count": len(be_logs), **_quick_stats(be_logs, "BE")},
+        "integration_manager": {"count": len(im_logs), **_quick_stats(im_logs, "IM")},
+        "stream_server": {"count": len(ss_logs), **_quick_stats(ss_logs, "SS")},
+        "nlp_server": {"count": len(nl_logs)},
+    }
+
+    if question:
+        if _get_provider() == "none":
+            try:
+                analysis = _render_combined_analysis(be_logs, im_logs, ss_logs, identifiers)
+            except Exception as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({
+                "ok": True,
+                "analysis": analysis,
+                "log_analysis_llm": "builtin",
+                "question": question,
+                "note": "no LLM configured — ran deterministic RCA instead; set OPENAI_API_KEY in Settings to answer free-form questions",
+                "sources": sources_block,
+            })
+        try:
+            analysis, provider_key = _render_question_driven_analysis(
+                be_logs, im_logs, ss_logs, identifiers, question, nl_logs=nl_logs
+            )
+            return jsonify({
+                "ok": True,
+                "analysis": analysis,
+                "log_analysis_llm": provider_key,
+                "question": question,
+                "sources": sources_block,
+            })
+        except Exception as exc:
+            try:
+                fallback = _render_combined_analysis(be_logs, im_logs, ss_logs, identifiers)
+            except Exception as exc2:
+                return jsonify({"ok": False, "error": f"LLM error: {exc}; fallback failed: {exc2}"}), 500
+            return jsonify({
+                "ok": True,
+                "analysis": fallback,
+                "log_analysis_llm": "builtin",
+                "question": question,
+                "note": f"LLM call failed ({str(exc)[:200]}) — showing deterministic RCA as fallback",
+                "sources": sources_block,
+            })
 
     try:
         analysis = _render_combined_analysis(be_logs, im_logs, ss_logs, identifiers)
@@ -2290,11 +3113,7 @@ def api_log_analyser_analyse_all():
             "ok": True,
             "analysis": analysis,
             "log_analysis_llm": "builtin",
-            "sources": {
-                "bot_engine": {"count": len(be_logs), **_quick_stats(be_logs, "BE")},
-                "integration_manager": {"count": len(im_logs), **_quick_stats(im_logs, "IM")},
-                "stream_server": {"count": len(ss_logs), **_quick_stats(ss_logs, "SS")},
-            },
+            "sources": sources_block,
         })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
@@ -2319,7 +3138,58 @@ def api_rephrase():
             "error": "No LLM configured. Set OPENAI_API_KEY or OPENAI_BASE_URL (e.g. local Ollama) in Settings.",
         }), 400
 
-    if mode == "email":
+    if mode == "rca":
+        system_prompt = (
+            "You convert a technical log-analysis writeup into a polished, customer-facing Root "
+            "Cause Analysis (RCA) email DRAFT. The recipient is the customer / business stakeholder "
+            "who reported the issue; they are NOT engineers and have no visibility into our "
+            "internal systems.\n\n"
+            "STRICT RULES:\n"
+            "- Preserve every factual claim from the input. Do NOT invent timestamps, message-ids, "
+            "  recipients, root causes, dates, or commitments that the input does not contain.\n"
+            "- Translate internal vocabulary into customer-friendly terms. NEVER mention any of: "
+            "  'Bot Engine', 'Integration Manager', 'Stream Server', 'Twilio', 'Speechmatics', "
+            "  'AWS SES', 'SES', 'Symitar', 'OpenSearch', 'log line [N]', 'connectionId', "
+            "  'contextId', 'APT', 'requestId', 'Pino', or any other internal module/API name. "
+            "  Replace them with the user-visible artefact (e.g. 'our notification system', "
+            "  'the email delivery service', 'the call platform').\n"
+            "- Do NOT include literal log identifiers, UUIDs, message-ids, internal pod names, "
+            "  HTTP status codes, or `[N]` evidence-bullet citations. Quote a customer-visible "
+            "  detail (caller phone last-4, the recipient mailbox, the time of the call) only when "
+            "  it materially clarifies the explanation, and even then keep it minimal.\n"
+            "- Distinguish 'sent / accepted by provider' from 'delivered to inbox' carefully. If "
+            "  the input states only acceptance, the email must say something like 'our "
+            "  notification system accepted the message for delivery; the gap appears to be in the "
+            "  recipient mailbox / mail server' — do not promise delivery the input cannot prove.\n"
+            "- Use a calm, accountable, action-oriented tone. Avoid blame. Apologise briefly only "
+            "  if the input shows an actual customer-impacting problem; do not over-apologise.\n\n"
+            "STRUCTURE — output the email body in this order, plain text, no markdown headings:\n"
+            "1. Greeting — `Hi <Team / Name>,` (use a generic 'Hi team,' if the input gives no "
+            "   recipient).\n"
+            "2. One-sentence acknowledgement of the reported issue.\n"
+            "3. **What we found** — 2-5 short sentences explaining what happened in plain English, "
+            "   sequenced by what the customer would care about (was the request captured? was the "
+            "   notification triggered? did it leave our system? where is the gap?).\n"
+            "4. **Root cause** — 1-3 sentences naming the most likely cause in customer language, "
+            "   using cautious framing if the input is inconclusive ('the most likely cause is …', "
+            "   'the evidence we have points to …'). Do not state a cause the input does not "
+            "   support.\n"
+            "5. **Next steps** — short bullets listing what the team will do (e.g. confirm "
+            "   delivery with the recipient mail provider, follow up on the customer request "
+            "   manually so nothing is missed, add monitoring). Use only steps the input implies "
+            "   or that obviously follow from the cause.\n"
+            "6. Closing — short reassurance and an invitation to reply with questions, then a "
+            "   neutral sign-off (`Best regards,` followed by `<Your name>` placeholder if no "
+            "   sender name is in the input).\n\n"
+            "FORMAT:\n"
+            "- Plain-text email body only. No subject line. No markdown headings (#). Use bold "
+            "  labels in front of `What we found:`, `Root cause:`, `Next steps:` if it improves "
+            "  scannability — but no `**` markdown markers; just the words themselves.\n"
+            "- Short paragraphs. Bullets only under `Next steps`.\n"
+            "- Do NOT mention you are an AI or that the text was generated/rephrased.\n"
+        )
+        max_tokens = 2200
+    elif mode == "email":
         system_prompt = (
             "You rewrite workplace drafts into clear, professional customer-facing emails.\n"
             "Rules:\n"

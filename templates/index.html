@@ -17,30 +17,32 @@
       --text: #e8eaef;
       --muted: #8b93a1;
       --text-dim: #9aa3b2;
-      --accent: #3d7dd9;
-      --accent-light: #6ea8ff;
-      --accent-dim: #2c5cad;
-      --accent-glow: rgba(61,125,217,0.18);
-      --cyan: #4d8ee8;
-      --cyan-dim: rgba(77,142,232,0.1);
-      --teal: #4d8ee8;
-      --teal-dim: rgba(77,142,232,0.1);
-      --amber: #c9a227;
-      --amber-dim: rgba(201,162,39,0.12);
-      --orange: #d4a017;
-      --orange-dim: rgba(212,160,23,0.1);
-      --rose: #c45c6a;
-      --rose-dim: rgba(196,92,106,0.1);
-      --emerald: #3d9a6a;
-      --emerald-dim: rgba(61,154,106,0.1);
-      --sky: #4d8ee8;
-      --sky-dim: rgba(77,142,232,0.1);
-      --violet: #6b7fd7;
-      --violet-dim: rgba(107,127,215,0.1);
-      --lime: #8a9a5c;
-      --lime-dim: rgba(138,154,92,0.1);
-      --success: #3d9a6a;
-      --danger: #d14b5c;
+      --accent: #5b8def;
+      --accent-light: #8ab4ff;
+      --accent-dim: #3a64c4;
+      --accent-glow: rgba(91,141,239,0.22);
+      --cyan: #22d3ee;
+      --cyan-dim: rgba(34,211,238,0.14);
+      --teal: #2dd4bf;
+      --teal-dim: rgba(45,212,191,0.14);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251,191,36,0.16);
+      --orange: #fb923c;
+      --orange-dim: rgba(251,146,60,0.15);
+      --rose: #fb7185;
+      --rose-dim: rgba(251,113,133,0.14);
+      --emerald: #34d399;
+      --emerald-dim: rgba(52,211,153,0.14);
+      --sky: #38bdf8;
+      --sky-dim: rgba(56,189,248,0.14);
+      --violet: #a78bfa;
+      --violet-dim: rgba(167,139,250,0.14);
+      --lime: #a3e635;
+      --lime-dim: rgba(163,230,53,0.14);
+      --pink: #f472b6;
+      --pink-dim: rgba(244,114,182,0.14);
+      --success: #34d399;
+      --danger: #f87171;
       --radius: 12px;
       --radius-sm: 8px;
       --shadow: 0 8px 32px rgba(0,0,0,0.4);
@@ -61,7 +63,12 @@
       display: flex;
       flex-direction: column;
       background: var(--bg);
-      background-image: radial-gradient(ellipse 120% 80% at 50% -30%, rgba(61,125,217,0.08) 0%, transparent 55%);
+      background-image:
+        radial-gradient(ellipse 70% 55% at 8% -10%, rgba(167,139,250,0.18) 0%, transparent 55%),
+        radial-gradient(ellipse 65% 50% at 95% 0%, rgba(34,211,238,0.16) 0%, transparent 55%),
+        radial-gradient(ellipse 80% 60% at 50% 110%, rgba(251,113,133,0.12) 0%, transparent 55%),
+        radial-gradient(ellipse 120% 80% at 50% -30%, rgba(91,141,239,0.10) 0%, transparent 60%);
+      background-attachment: fixed;
       color: var(--text);
       font-family: 'DM Sans', system-ui, sans-serif;
       font-size: 14px;
@@ -112,7 +119,11 @@
       letter-spacing: -0.02em;
       position: relative;
       z-index: 1;
-      color: var(--text);
+      background: linear-gradient(90deg, #38bdf8 0%, #a78bfa 50%, #f472b6 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
     }
     .app-topbar-meta {
       display: flex;
@@ -306,19 +317,21 @@
       font-family: inherit;
       font-size: 0.92rem;
       font-weight: 600;
-      background: var(--accent);
+      background: linear-gradient(135deg, #5b8def 0%, #a78bfa 60%, #f472b6 100%);
+      background-size: 180% 180%;
+      background-position: 0% 50%;
       color: #fff;
       border: 1px solid var(--accent-dim);
       border-radius: 8px;
       cursor: pointer;
-      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-      box-shadow: none;
+      transition: background-position 0.35s ease, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+      box-shadow: 0 2px 10px rgba(91,141,239,0.25);
       letter-spacing: 0.01em;
     }
     .btn:hover {
-      background: var(--accent-light);
+      background-position: 100% 50%;
       border-color: var(--accent-light);
-      box-shadow: 0 2px 8px var(--accent-glow);
+      box-shadow: 0 4px 16px rgba(167,139,250,0.35);
     }
     .btn:active { transform: translateY(0); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
@@ -419,20 +432,20 @@
       min-height: 0;
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      grid-template-rows: repeat(3, minmax(0, 1fr));
+      grid-template-rows: repeat(5, minmax(0, 1fr));
       gap: 0.4rem;
       align-content: stretch;
     }
     @media (min-width: 900px) {
       .tool-list {
         grid-template-columns: repeat(3, 1fr);
-        grid-template-rows: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(3, minmax(0, 1fr));
       }
     }
     @media (max-width: 560px) {
       .tool-list {
         grid-template-columns: 1fr;
-        grid-template-rows: repeat(6, minmax(0, 1fr));
+        grid-template-rows: repeat(9, minmax(0, 1fr));
       }
     }
     /* Tool grid (home only — colours from #homePage + prefers-color-scheme) */
@@ -509,6 +522,48 @@
       opacity: 1;
       transform: translateX(2px);
     }
+
+    /* Per-tile accent colours — each tool gets a distinct hue */
+    #homePage .tool-list .tool-row {
+      --tile-accent: var(--home-accent);
+      --tile-accent-soft: rgba(91,141,239,0.16);
+      position: relative;
+      overflow: hidden;
+    }
+    #homePage .tool-list .tool-row::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--tile-accent-soft) 0%, transparent 60%);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    #homePage .tool-list .tool-row:hover::before { opacity: 1; }
+    #homePage .tool-list .tool-row:hover {
+      border-color: var(--tile-accent);
+      box-shadow: var(--home-shadow-hover), 0 0 0 1px var(--tile-accent-soft);
+    }
+    #homePage .tool-list .tool-row .tile-icon {
+      background: var(--tile-accent-soft);
+      border-color: var(--tile-accent);
+      color: var(--tile-accent);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    #homePage .tool-list .tool-row:hover .tile-icon {
+      transform: scale(1.06);
+      box-shadow: 0 0 0 4px var(--tile-accent-soft);
+    }
+    #homePage .tool-list .tool-row:hover .tool-row-arrow { color: var(--tile-accent); }
+    #homePage .tool-list .tool-row:nth-child(1) { --tile-accent: #38bdf8; --tile-accent-soft: rgba(56,189,248,0.18); }
+    #homePage .tool-list .tool-row:nth-child(2) { --tile-accent: #a78bfa; --tile-accent-soft: rgba(167,139,250,0.18); }
+    #homePage .tool-list .tool-row:nth-child(3) { --tile-accent: #f87171; --tile-accent-soft: rgba(248,113,113,0.20); }
+    #homePage .tool-list .tool-row:nth-child(4) { --tile-accent: #34d399; --tile-accent-soft: rgba(52,211,153,0.18); }
+    #homePage .tool-list .tool-row:nth-child(5) { --tile-accent: #fbbf24; --tile-accent-soft: rgba(251,191,36,0.20); }
+    #homePage .tool-list .tool-row:nth-child(6) { --tile-accent: #fb7185; --tile-accent-soft: rgba(251,113,133,0.18); }
+    #homePage .tool-list .tool-row:nth-child(7) { --tile-accent: #fb923c; --tile-accent-soft: rgba(251,146,60,0.18); }
+    #homePage .tool-list .tool-row:nth-child(8) { --tile-accent: #a3e635; --tile-accent-soft: rgba(163,230,53,0.18); }
+    #homePage .tool-list .tool-row:nth-child(9) { --tile-accent: #f472b6; --tile-accent-soft: rgba(244,114,182,0.18); }
 
     /* View containers */
     .view-section { animation: fadeIn 0.3s ease-out; }
@@ -660,6 +715,14 @@
           <span class="tool-row-body">
             <h3>Log analyser</h3>
             <p>Bot Engine, Integration Manager, and Stream Server logs in one place — fetch by Connection ID, Context ID, or APT, then analyse with your LLM.</p>
+          </span>
+          <span class="tool-row-arrow" aria-hidden="true">&#8594;</span>
+        </button>
+        <button type="button" class="tool-row" onclick="showView('sessionRcaView')">
+          <span class="tile-icon">&#129488;</span>
+          <span class="tool-row-body">
+            <h3>Session RCA agent</h3>
+            <p>Ask anything about a session — auth, dropped calls, transfers, audio, intent. The agent reads BE+IM+SS logs and produces a structured RCA, client-facing draft, and internal eng ticket.</p>
           </span>
           <span class="tool-row-arrow" aria-hidden="true">&#8594;</span>
         </button>
@@ -920,16 +983,17 @@
 
       <!-- Unified input card -->
       <div class="card" id="logAnalyserUnifiedCard">
-        <h2>Fetch logs from all 3 sources</h2>
+        <h2>Fetch logs from all 4 sources</h2>
         <p class="hint" style="margin-top:-0.25rem;">Enter any combination of identifiers. Each source runs in parallel using the IDs that apply to it; sources whose required identifier is missing are skipped.</p>
 
         <div class="loga-source-pills" id="laSourcePills">
           <span class="loga-source-pill" id="laPillBe"><span class="dot"></span> Bot Engine <span class="loga-pill-detail" style="color:var(--muted);"></span></span>
           <span class="loga-source-pill" id="laPillIm"><span class="dot"></span> Integration Manager <span class="loga-pill-detail" style="color:var(--muted);"></span></span>
           <span class="loga-source-pill" id="laPillSs"><span class="dot"></span> Stream Server <span class="loga-pill-detail" style="color:var(--muted);"></span></span>
+          <span class="loga-source-pill" id="laPillNl"><span class="dot"></span> NLP Server <span class="loga-pill-detail" style="color:var(--muted);"></span></span>
         </div>
 
-        <label for="laConnectionId">Connection ID <span style="color:var(--muted);font-size:0.78rem;font-weight:400;">(used by Bot Engine, Integration Manager, Stream Server)</span></label>
+        <label for="laConnectionId">Connection ID <span style="color:var(--muted);font-size:0.78rem;font-weight:400;">(used by Bot Engine, Integration Manager, Stream Server, NLP Server)</span></label>
         <input type="text" id="laConnectionId" placeholder="UUIDv1, e.g. d7214104-3d7d-11f1-959f-062665ac3593" style="font-size:0.88rem;">
 
         <label for="laContextId" style="margin-top: 1rem;">Context ID <span style="color:var(--muted);font-size:0.78rem;font-weight:400;">(used by Bot Engine, Stream Server)</span></label>
@@ -956,11 +1020,22 @@
             <option value="43200">Last 30 days</option>
           </optgroup>
         </select>
-        <p class="hint" style="font-size:0.78rem;margin-top:0.3rem;">Skip rules: Bot Engine needs Connection ID or Context ID. Integration Manager needs Connection ID. Stream Server needs Context ID, APT identifier, or Connection ID.</p>
+        <p class="hint" style="font-size:0.78rem;margin-top:0.3rem;">Skip rules: Bot Engine needs Connection ID or Context ID. Integration Manager needs Connection ID. Stream Server needs Context ID, APT identifier, or Connection ID. NLP Server needs Connection ID.</p>
+
+        <div id="laQuestionPanel" style="margin-top:1.25rem;padding:0.85rem 1rem;background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--accent-light);border-radius:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.6rem;margin-bottom:0.45rem;flex-wrap:wrap;">
+            <label for="laQuestion" style="margin:0;font-weight:700;color:var(--text);">Focus question <span style="color:var(--muted);font-size:0.78rem;font-weight:400;">(optional &mdash; what should the AI check across the logs?)</span></label>
+            <span id="laModePill" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.18rem 0.55rem;border-radius:20px;font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:var(--surface-3);color:var(--muted);border:1px solid var(--border);"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;"></span><span id="laModePillText">RCA mode</span></span>
+          </div>
+          <textarea id="laQuestion" rows="2" style="width:100%;font-size:0.88rem;font-family:inherit;resize:vertical;" placeholder="e.g. Did the callback email get delivered? &nbsp;|&nbsp; Why did the SMS not go out? &nbsp;|&nbsp; Was there an STT timeout?"></textarea>
+          <p class="hint" style="font-size:0.78rem;margin:0.4rem 0 0 0;">Leave blank for the default cross-source RCA (built-in deterministic). Type a question to switch to LLM-driven analysis that cites specific log lines as evidence.</p>
+        </div>
 
         <div style="display: flex; gap: 0.6rem; margin-top: 1.25rem; flex-wrap: wrap;">
-          <button type="button" class="btn" id="laFetchBtn">Fetch from all 3 sources</button>
+          <button type="button" class="btn" id="laFetchBtn">Fetch from all 4 sources</button>
           <button type="button" class="btn" id="laAnalyseBtn" style="display:none;">Analyse all (combined RCA)</button>
+          <button type="button" class="btn" id="laDownloadAllBtn" style="display:none;background:var(--surface);color:var(--text);border:1px solid var(--border);box-shadow:none;font-weight:500;" title="ZIP containing 4 CSVs (one per source) + raw JSON + manifest.json">Download all (ZIP)</button>
+          <button type="button" class="btn" id="laDownloadAllJsonBtn" style="display:none;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;" title="Single JSON file with all 4 source arrays + manifest">Download all (JSON)</button>
         </div>
         <p class="err" id="laApiErr" style="display: none;"></p>
       </div>
@@ -979,6 +1054,28 @@
             <div id="laVerdictBadge" style="display:none;padding:0.3rem 0.8rem;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.03em;"></div>
           </div>
           <div id="laAnalysisBody" style="padding:1.25rem;"></div>
+          <div style="padding:0.75rem 1.25rem 1rem 1.25rem;border-top:1px solid var(--border);background:var(--surface-2);display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
+            <button type="button" class="btn" id="laRcaDraftBtn">Draft customer-facing RCA</button>
+            <span class="hint" style="font-size:0.78rem;margin:0;">Turns the analysis above into a polished email draft for the affected customer / business team.</span>
+          </div>
+          <p class="err" id="laRcaDraftErr" style="display:none;margin:0.5rem 1.25rem;"></p>
+          <div id="laRcaDraftWrap" style="display:none;border-top:1px solid var(--border);">
+            <div style="padding:1rem 1.25rem;background:var(--surface-2);display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:0.6rem;">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--radius-sm);background:var(--surface-3);border:1px solid var(--border);font-size:1rem;color:var(--emerald);">&#9993;</span>
+                <div>
+                  <div style="font-weight:700;font-size:1rem;color:var(--text);">Customer-facing RCA draft</div>
+                  <div id="laRcaDraftMeta" style="font-size:0.75rem;color:var(--muted);margin-top:0.15rem;">Review and edit before sending.</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button type="button" class="btn" id="laRcaDraftCopyBtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);box-shadow:none;font-weight:500;">Copy</button>
+                <button type="button" class="btn" id="laRcaDraftEditBtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);box-shadow:none;font-weight:500;">Edit further (Rephrase)</button>
+                <button type="button" class="btn" id="laRcaDraftRegenBtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);box-shadow:none;font-weight:500;">Regenerate</button>
+              </div>
+            </div>
+            <textarea id="laRcaDraftOut" rows="14" style="width:100%;padding:1.1rem 1.25rem;border:none;border-top:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:0.9rem;line-height:1.6;resize:vertical;outline:none;"></textarea>
+          </div>
         </div>
       </div>
 
@@ -1194,7 +1291,137 @@
       </div>
     </div>
     </div><!-- /streamServerLogsView -->
+
+    <!-- ======================== NLP SERVER result section ======================== -->
+    <div id="nlpServerView" class="loga-source-section" style="display:none;">
+    <div class="card" id="nlpServerCard">
+      <style>
+        #nlLogsTable tr.nl-row:hover td { background: var(--surface-2); }
+        #nlLogsTable tr.nl-row td { transition: background 0.12s ease-out; }
+        #nlLogsTable tr.nl-detail td { animation: fadeIn 0.18s ease-out; }
+        #nlLogsTable tr.nl-detail .nl-detail-body { animation: fadeIn 0.18s ease-out; }
+      </style>
+      <div class="loga-section-banner">
+        <h3><span style="font-size:1.1rem;">&#129504;</span> NLP Server Default Logs</h3>
+        <span class="loga-section-status" id="laNlBanner">Idle &mdash; press Fetch above</span>
+      </div>
+      <p class="hint" style="margin:-0.25rem 0 0.75rem 0;font-size:0.82rem;">
+        Filter by <code style="font-size:0.78rem;">metadata.connection_id</code> (and optionally <code style="font-size:0.78rem;">metadata.request_id</code>). Set <code style="font-size:0.78rem;">OPENSEARCH_NLP_SERVER_INDEX</code> in Settings — defaults to <code style="font-size:0.78rem;">default.nlp-server.interface-common*</code>.
+      </p>
+      <div id="nlpServerStatus" style="margin-bottom: 1rem;">
+        <span class="hint">Checking nlp-server index...</span>
+      </div>
+      <div class="loga-hidden-form" aria-hidden="true">
+        <input type="text" id="nlConnectionId">
+        <input type="text" id="nlRequestId">
+        <select id="nlTimeFilter"><option value="0" selected>All time</option></select>
+        <button type="button" id="nlFetchBtn">Fetch Logs</button>
+        <button type="button" id="nlDownloadBtn">Download Table</button>
+        <button type="button" id="nlDownloadJsonBtn">Download JSON</button>
+        <p id="nlApiErr"></p>
+      </div>
+      <div style="display: flex; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap;">
+        <button type="button" class="btn" id="laNlDownloadBtn" style="display:none;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;">Download Table (CSV)</button>
+        <button type="button" class="btn" id="laNlDownloadJsonBtn" style="display:none;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;">Download JSON</button>
+      </div>
+
+      <div id="nlpServerResult" style="display: none; margin-top: 1.25rem;">
+        <div style="display:flex;gap:1rem;margin-bottom:1rem;">
+          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
+            <div style="font-size:1.5rem;font-weight:700;color:var(--accent-light);" id="nlTotalCount">0</div>
+            <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Matched Logs</div>
+          </div>
+          <div style="flex:1;background:var(--surface-2);border-radius:10px;padding:0.75rem 1rem;text-align:center;">
+            <div style="font-size:1.5rem;font-weight:700;color:var(--muted);" id="nlScannedCount">0</div>
+            <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Returned</div>
+          </div>
+        </div>
+
+        <div class="agent-actions" id="nlLogsSection">
+          <h3>Log entries <span id="nlLogCount" style="font-weight:400;font-size:0.78rem;color:var(--muted);text-transform:none;letter-spacing:0;"></span></h3>
+          <div style="max-height:600px;overflow:auto;">
+            <table class="client-table" id="nlLogsTable">
+              <thead><tr><th style="width:24px;"></th><th>Timestamp</th><th>Template</th><th>Experience / Slot</th><th>Caller input</th><th>LLM output</th><th style="min-width:160px;">Model · time</th></tr></thead>
+              <tbody id="nlLogsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div><!-- /nlpServerView -->
     </div><!-- /logAnalyserView -->
+
+    <!-- Session RCA View -->
+    <div id="sessionRcaView" class="view-section" style="display:none;">
+      <div class="card">
+        <h2>Session RCA agent</h2>
+        <p class="hint">Ask anything about a single voice/chat session — auth failures, dropped calls, transfers, audio glitches, intent misfires. The agent reads BE + IM + Stream Server logs, runs deterministic detectors, and produces three drafts: a structured RCA, a client-facing update, and an internal eng ticket. Auto-correlates retry calls from the same caller within ±10 minutes.</p>
+
+        <div role="tablist" aria-label="Input mode" style="display:flex;gap:0.4rem;margin:0.65rem 0 0.5rem;">
+          <button type="button" id="srcaTabFetch" class="btn" style="margin-top:0;padding:0.4rem 1rem;font-size:0.82rem;" aria-selected="true">Connection ID</button>
+          <button type="button" id="srcaTabPaste" class="btn secondary" style="margin-top:0;padding:0.4rem 1rem;font-size:0.82rem;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;" aria-selected="false">Paste JSON</button>
+        </div>
+
+        <div id="srcaModeFetch">
+          <label for="srcaConnId">Connection ID (UUIDv1)</label>
+          <input type="text" id="srcaConnId" placeholder="e.g. 788825e4-38e2-11f1-be5d-062665ac3593" autocomplete="off" />
+          <div style="display:flex;gap:1rem;margin-top:0.5rem;flex-wrap:wrap;align-items:center;">
+            <label class="check" style="display:inline-flex;align-items:center;gap:0.4rem;margin:0;color:var(--text);font-size:0.85rem;cursor:pointer;">
+              <input type="checkbox" id="srcaCorrelate" checked /> Auto-correlate related calls
+            </label>
+            <label for="srcaWindow" style="display:inline-flex;align-items:center;gap:0.4rem;margin:0;color:var(--muted);font-size:0.85rem;">
+              ± <input type="number" id="srcaWindow" min="1" max="120" value="10" style="width:4rem;padding:0.35rem 0.5rem;font-family:'JetBrains Mono',monospace;font-size:0.85rem;" /> min
+            </label>
+            <label class="check" style="display:inline-flex;align-items:center;gap:0.4rem;margin:0;color:var(--text);font-size:0.85rem;cursor:pointer;" title="Stream Server logs are needed for transcript / dropped-call / transfer / audio questions, but they're slow to scan and empty for most auth-only sessions. Auto-enabled when your question mentions any of those topics.">
+              <input type="checkbox" id="srcaIncludeSs" /> Include Stream Server logs (slower)
+            </label>
+          </div>
+          <p class="hint" style="margin-top:0.4rem;font-size:0.78rem;">Fetching by connectionId scans large indexes (~140M docs) — typically 30–90 seconds, longer with Stream Server logs included.</p>
+        </div>
+
+        <div id="srcaModePaste" style="display:none;">
+          <label for="srcaPasteCid">Connection ID (optional label)</label>
+          <input type="text" id="srcaPasteCid" placeholder="e.g. 788825e4-38e2-11f1-be5d-062665ac3593" autocomplete="off" />
+          <label for="srcaPasteBe" style="margin-top:0.5rem;">Bot Engine logs (JSON array of <code>_source</code> docs)</label>
+          <textarea id="srcaPasteBe" placeholder='[{"@timestamp":"…","rawLog":{…}}, …]' style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;min-height:110px;"></textarea>
+          <label for="srcaPasteIm" style="margin-top:0.5rem;">Integration Manager logs (JSON array of <code>_source</code> docs)</label>
+          <textarea id="srcaPasteIm" placeholder='[{"@timestamp":"…","rawLog":{…}}, …]' style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;min-height:110px;"></textarea>
+          <label for="srcaPasteSs" style="margin-top:0.5rem;">Stream Server logs (optional — JSON array of <code>_source</code> docs)</label>
+          <textarea id="srcaPasteSs" placeholder='[{"@timestamp":"…","rawLog":{…}}, …]' style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;min-height:110px;"></textarea>
+        </div>
+
+        <label for="srcaQuestion" style="margin-top:0.8rem;">Your question (optional) — leave empty for a generic structured RCA</label>
+        <textarea id="srcaQuestion" placeholder="e.g. Why did the caller fail authentication? · Why did the call drop? · Did the bot understand the customer? · Was a transfer attempted?" style="min-height:60px;"></textarea>
+
+        <label class="check" style="display:inline-flex;align-items:center;gap:0.4rem;margin:0.6rem 0 0;color:var(--text);font-size:0.85rem;cursor:pointer;">
+          <input type="checkbox" id="srcaUseLlm" checked /> Use LLM for prose drafts
+        </label>
+
+        <button type="button" id="srcaAnalyseBtn" class="btn" style="margin-top:0.8rem;">Analyse</button>
+        <div id="srcaErr" class="err" style="display:none;"></div>
+        <div id="srcaHint" class="hint" style="display:none;margin-top:0.5rem;"></div>
+      </div>
+
+      <div id="srcaResultCard" class="card" style="display:none;">
+        <h2>Result</h2>
+        <div id="srcaScope" style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.82rem;color:var(--muted);margin-bottom:0.6rem;"></div>
+        <div id="srcaModes" style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-bottom:0.65rem;"></div>
+
+        <div role="tablist" aria-label="Drafts" style="display:flex;gap:0.4rem;margin-bottom:0.45rem;flex-wrap:wrap;">
+          <button type="button" data-srca-tab="rca" class="btn" style="margin-top:0;padding:0.4rem 1rem;font-size:0.82rem;" aria-selected="true">Structured RCA</button>
+          <button type="button" data-srca-tab="client" class="btn secondary" style="margin-top:0;padding:0.4rem 1rem;font-size:0.82rem;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;" aria-selected="false">Client draft</button>
+          <button type="button" data-srca-tab="internal" class="btn secondary" style="margin-top:0;padding:0.4rem 1rem;font-size:0.82rem;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;" aria-selected="false">Internal ticket</button>
+          <button type="button" id="srcaCopyBtn" class="btn secondary" style="margin-top:0;padding:0.4rem 1rem;font-size:0.82rem;background:var(--surface);color:var(--muted);border:1px solid var(--border);box-shadow:none;font-weight:500;margin-left:auto;">Copy current draft</button>
+        </div>
+
+        <pre id="srcaDraft" style="white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.85rem 1rem;font-family:'JetBrains Mono',monospace;font-size:0.82rem;line-height:1.55;color:var(--text);max-height:60vh;overflow:auto;margin:0;"></pre>
+
+        <details style="margin-top:0.7rem;">
+          <summary style="cursor:pointer;color:var(--muted);font-size:0.78rem;">Raw signals (JSON)</summary>
+          <pre id="srcaSignals" style="margin-top:0.5rem;white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.65rem 0.8rem;font-family:'JetBrains Mono',monospace;font-size:0.72rem;max-height:40vh;overflow:auto;color:var(--muted);"></pre>
+        </details>
+      </div>
+    </div>
 
     <!-- Twilio Log Analysis View -->
     <div id="twilioView" class="view-section" style="display:none;">
@@ -1666,6 +1893,7 @@
       homePage: '',
       streamServerView: 'Stream Server Alerts',
       logAnalyserView: 'Log analyser',
+      sessionRcaView: 'Session RCA agent',
       twilioView: 'Twilio Log Analysis',
       rephraseView: 'Email & ticket rephrase',
       dbView: 'Database check',
@@ -1677,6 +1905,7 @@
       homePage: '',
       streamServerView: 'Choose error codes and a time window, then run the alert engine and review RCA output, downloads, and Slack actions.',
       logAnalyserView: 'One form, three sources. Enter a Connection ID, Context ID, and/or APT identifier — Bot Engine, Integration Manager, and Stream Server logs are fetched in parallel for a combined cross-source RCA.',
+      sessionRcaView: 'Ask anything about a session. The agent reads BE+IM+SS logs, runs deterministic detectors (auth failures, lockouts, SS errors, dropped sessions), and answers your question — plus produces a structured RCA, a client-facing draft, and an internal eng ticket.',
       twilioView: 'Search Twilio call logs by From number across your main account and subaccounts.',
       rephraseView: 'Paste a draft and pick an output style. Uses your LLM from Settings.',
       dbView: 'Read-only PostgreSQL probe: version, current database, user, and public table count.',
@@ -1692,18 +1921,21 @@
       be: { logs: null, total: 0, scanned: 0, error: null, identifiers: null, ready: false, payload: null },
       im: { logs: null, total: 0, scanned: 0, error: null, identifiers: null, ready: false, payload: null },
       ss: { logs: null, total: 0, scanned: 0, error: null, identifiers: null, ready: false, payload: null },
+      nl: { logs: null, total: 0, scanned: 0, error: null, identifiers: null, ready: false, payload: null },
     };
 
     function _logaResetSourceSections() {
-      ['botEngineView', 'integrationManagerView', 'streamServerLogsView'].forEach(function(id) {
+      ['botEngineView', 'integrationManagerView', 'streamServerLogsView', 'nlpServerView'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
     }
 
+    var _LOGA_BANNER_IDS = { be: 'laBeBanner', im: 'laImBanner', ss: 'laSsBanner', nl: 'laNlBanner' };
+    var _LOGA_PILL_IDS = { be: 'laPillBe', im: 'laPillIm', ss: 'laPillSs', nl: 'laPillNl' };
+
     function _logaSetBanner(source, status, text) {
-      var id = source === 'be' ? 'laBeBanner' : source === 'im' ? 'laImBanner' : 'laSsBanner';
-      var el = document.getElementById(id);
+      var el = document.getElementById(_LOGA_BANNER_IDS[source]);
       if (!el) return;
       el.classList.remove('ok', 'warn', 'bad');
       if (status) el.classList.add(status);
@@ -1711,8 +1943,7 @@
     }
 
     function _logaSetPill(source, status, detail) {
-      var id = source === 'be' ? 'laPillBe' : source === 'im' ? 'laPillIm' : 'laPillSs';
-      var el = document.getElementById(id);
+      var el = document.getElementById(_LOGA_PILL_IDS[source]);
       if (!el) return;
       el.classList.remove('ok', 'warn', 'bad');
       if (status) el.classList.add(status);
@@ -1721,7 +1952,7 @@
     }
 
     function showView(viewId) {
-      var views = ['homePage', 'streamServerView', 'logAnalyserView', 'twilioView', 'rephraseView', 'dbView', 'symitarView', 'todoView', 'settingsView'];
+      var views = ['homePage', 'streamServerView', 'logAnalyserView', 'sessionRcaView', 'twilioView', 'rephraseView', 'dbView', 'symitarView', 'todoView', 'settingsView'];
       for (var i = 0; i < views.length; i++) {
         var el = document.getElementById(views[i]);
         if (el) el.style.display = views[i] === viewId ? '' : 'none';
@@ -1732,7 +1963,7 @@
       if (homeBtn) homeBtn.style.display = viewId === 'homePage' ? 'none' : 'inline-flex';
       var subEl = document.getElementById('appSubline');
       if (subEl) subEl.textContent = _viewHints[viewId] || '';
-      var hashMap = { streamServerView: '#stream-server', logAnalyserView: '#log-analyser', twilioView: '#twilio', rephraseView: '#rephrase', dbView: '#database', symitarView: '#symitar', todoView: '#todo', settingsView: '#settings' };
+      var hashMap = { streamServerView: '#stream-server', logAnalyserView: '#log-analyser', sessionRcaView: '#session-rca', twilioView: '#twilio', rephraseView: '#rephrase', dbView: '#database', symitarView: '#symitar', todoView: '#todo', settingsView: '#settings' };
       if (hashMap[viewId]) {
         history.replaceState(null, '', hashMap[viewId]);
       } else {
@@ -1742,6 +1973,7 @@
       if (viewId === 'dbView' && typeof window._refreshDbCheck === 'function') window._refreshDbCheck();
       if (viewId === 'symitarView' && typeof window._refreshSymitarCheck === 'function') window._refreshSymitarCheck();
       if (viewId === 'todoView' && typeof window._refreshTodos === 'function') window._refreshTodos();
+      if (viewId === 'sessionRcaView' && typeof window._refreshSrca === 'function') window._refreshSrca();
       if (viewId === 'logAnalyserView') {
         var laWrap = document.getElementById('logAnalyserView');
         if (laWrap) laWrap.scrollTop = 0;
@@ -1768,6 +2000,7 @@
         return;
       }
       if (hash === '#stream-server') showView('streamServerView');
+      else if (hash === '#session-rca' || hash === '#auth-rca') showView('sessionRcaView');
       else if (hash === '#twilio') showView('twilioView');
       else if (hash === '#rephrase') showView('rephraseView');
       else if (hash === '#database') showView('dbView');
@@ -3753,11 +3986,272 @@
       });
     })();
 
-    // --- Unified Log Analyser controller (drives all 3 sources from one form) ---
+    // --- NLP Server Default Logs sub-agent ---
+    (function() {
+      var nlStatusEl = document.getElementById('nlpServerStatus');
+      var nlFetchBtn = document.getElementById('nlFetchBtn');
+      var nlDownloadBtn = document.getElementById('nlDownloadBtn');
+      var nlDownloadJsonBtn = document.getElementById('nlDownloadJsonBtn');
+      var nlApiErr = document.getElementById('nlApiErr');
+      var nlResultEl = document.getElementById('nlpServerResult');
+      var nlConnInput = document.getElementById('nlConnectionId');
+      var nlReqInput = document.getElementById('nlRequestId');
+      var nlTimeSelect = document.getElementById('nlTimeFilter');
+      var nlBody = document.getElementById('nlLogsBody');
+      var lastNlPayload = null;
+      var lastNlLogs = null;
+
+      fetch('/api/nlp-server/status').then(function(r) { return r.json(); }).then(function(d) {
+        if (d.configured && d.connected) {
+          nlStatusEl.innerHTML = '<span style="color:var(--success);font-weight:600;">&#9679;</span> <span style="color:var(--text);font-size:0.9rem;">Connected to <code style="background:var(--surface-2);padding:0.15rem 0.5rem;border-radius:4px;font-size:0.82rem;">' + (d.index || 'nlp-server') + '</code></span>'
+            + (d.doc_count !== undefined ? ' <span style="color:var(--muted);font-size:0.82rem;">(' + Number(d.doc_count).toLocaleString() + ' docs)</span>' : '');
+        } else if (d.configured) {
+          nlStatusEl.innerHTML = '<span style="color:var(--amber);font-weight:600;">&#9679;</span> <span style="color:var(--muted);font-size:0.9rem;">Configured but not reachable: ' + (d.error || d.message || '') + '</span>';
+        } else {
+          nlStatusEl.innerHTML = '<span style="color:var(--muted);font-weight:600;">&#9679;</span> <span style="color:var(--muted);font-size:0.9rem;">' + (d.message || 'Set OPENSEARCH_NLP_SERVER_INDEX in .env') + '</span>';
+        }
+      }).catch(function() {
+        nlStatusEl.innerHTML = '<span style="color:var(--danger);">Could not check NLP server status.</span>';
+      });
+
+      function nlEsc(t) {
+        var d = document.createElement('div');
+        d.textContent = t == null ? '' : String(t);
+        return d.innerHTML;
+      }
+
+      function nlTemplateBadge(tt) {
+        if (!tt) return '<span style="color:var(--muted);">&mdash;</span>';
+        var color = '#94a3b8';
+        var bg = 'rgba(148,163,184,0.12)';
+        var t = String(tt).toLowerCase();
+        if (t === 'function_active')  { color = '#34d399'; bg = 'rgba(52,211,153,0.14)'; }
+        else if (t === 'top_level')   { color = '#60a5fa'; bg = 'rgba(96,165,250,0.14)'; }
+        else if (t === 'function_initial') { color = '#f59e0b'; bg = 'rgba(245,158,11,0.14)'; }
+        return '<span style="display:inline-block;padding:0.12rem 0.5rem;border-radius:10px;background:' + bg + ';color:' + color + ';font-size:0.74rem;font-weight:600;letter-spacing:0.02em;">' + nlEsc(tt) + '</span>';
+      }
+
+      function nlDetailField(label, value, opts) {
+        if (value == null || value === '') return '';
+        opts = opts || {};
+        var pre = opts.preformatted
+          ? '<pre style="margin:0;font-family:var(--font-mono,monospace);font-size:0.78rem;line-height:1.45;white-space:pre-wrap;word-break:break-word;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0.5rem 0.75rem;">' + nlEsc(value) + '</pre>'
+          : '<div style="font-size:0.85rem;color:var(--text);word-break:break-word;">' + nlEsc(value) + '</div>';
+        return '<div style="display:flex;flex-direction:column;gap:0.25rem;">'
+          + '<div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">' + nlEsc(label) + '</div>'
+          + pre + '</div>';
+      }
+
+      function nlRenderDetail(l) {
+        var fields = [];
+        fields.push(nlDetailField('Timestamp', l.timestamp));
+        fields.push(nlDetailField('Level', l.level));
+        fields.push(nlDetailField('Tenant', l.tenant_name));
+        fields.push(nlDetailField('Agent', l.agent_name));
+        fields.push(nlDetailField('Connection ID', l.connection_id));
+        fields.push(nlDetailField('Session ID', l.session_id));
+        fields.push(nlDetailField('Request ID', l.request_id));
+        fields.push(nlDetailField('Template type', l.template_type));
+        fields.push(nlDetailField('Template ID', l.template_id));
+        fields.push(nlDetailField('Experience', l.experience_name || l.experience_id));
+        fields.push(nlDetailField('Active parameter', l.active_parameter));
+        fields.push(nlDetailField('Action', l.action));
+        fields.push(nlDetailField('Model', l.model_id));
+        if (l.llm_time_ms) fields.push(nlDetailField('LLM time', Number(l.llm_time_ms).toFixed(0) + ' ms'));
+        if (l.total_tokens) fields.push(nlDetailField('Tokens', (l.prompt_tokens || '?') + ' in / ' + (l.completion_tokens || '?') + ' out / ' + l.total_tokens + ' total'));
+        var grid = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.85rem 1.25rem;">' + fields.filter(Boolean).join('') + '</div>';
+
+        var blocks = [];
+        if (l.text)        blocks.push(nlDetailField('Caller input (text)', l.text, {preformatted:true}));
+        if (l.action_data) blocks.push(nlDetailField('action_data', l.action_data, {preformatted:true}));
+        if (l.llm_output)  blocks.push(nlDetailField('Raw LLM output', l.llm_output, {preformatted:true}));
+        if (l.prompt)      blocks.push(nlDetailField('Prompt template', l.prompt, {preformatted:true}));
+        var blocksHtml = blocks.length
+          ? '<div style="display:flex;flex-direction:column;gap:0.85rem;margin-top:0.85rem;">' + blocks.join('') + '</div>'
+          : '';
+
+        var rawHtml = '';
+        if (l._raw) {
+          try {
+            var rawStr = JSON.stringify(l._raw, null, 2);
+            rawHtml = '<details style="margin-top:0.85rem;"><summary style="cursor:pointer;font-size:0.78rem;color:var(--muted);">Raw _source</summary>'
+              + '<pre style="margin:0.5rem 0 0 0;font-family:var(--font-mono,monospace);font-size:0.74rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0.6rem 0.85rem;max-height:340px;overflow:auto;">' + nlEsc(rawStr) + '</pre></details>';
+          } catch (e) { /* ignore */ }
+        }
+        return '<div class="nl-detail-body" style="padding:0.85rem 1rem 1rem 1rem;background:var(--surface-2);border-top:1px solid var(--border);">' + grid + blocksHtml + rawHtml + '</div>';
+      }
+
+      function nlRenderBody(logs) {
+        if (!logs || !logs.length) {
+          nlBody.innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;color:var(--muted);">No NLP entries.</td></tr>';
+          return;
+        }
+        var html = '';
+        for (var i = 0; i < logs.length; i++) {
+          var l = logs[i];
+          var ts = nlEsc(l.timestamp || '');
+          var tt = nlTemplateBadge(l.template_type);
+          var exp = nlEsc(l.experience_name || l.experience_id || '');
+          var slot = nlEsc(l.active_parameter || '');
+          var expCell = exp + (slot && slot.toLowerCase() !== 'none' ? '<div style="font-size:0.72rem;color:var(--muted);margin-top:0.15rem;">slot: ' + slot + '</div>' : '');
+          var inputTxt = nlEsc(l.text || '');
+          var llmOut = nlEsc(l.llm_output || l.action || '');
+          var modelTime = nlEsc(l.model_id || '') + (l.llm_time_ms ? '<div style="font-size:0.72rem;color:var(--muted);margin-top:0.15rem;">' + Number(l.llm_time_ms).toFixed(0) + ' ms</div>' : '');
+          html += '<tr class="nl-row" data-nl-idx="' + i + '" style="cursor:pointer;">'
+            + '<td style="text-align:center;color:var(--muted);font-size:0.85rem;">&#9656;</td>'
+            + '<td style="white-space:nowrap;font-size:0.78rem;">' + ts + '</td>'
+            + '<td>' + tt + '</td>'
+            + '<td style="font-size:0.82rem;">' + (expCell || '<span style="color:var(--muted);">&mdash;</span>') + '</td>'
+            + '<td style="font-size:0.82rem;max-width:280px;word-break:break-word;">' + (inputTxt || '<span style="color:var(--muted);">&mdash;</span>') + '</td>'
+            + '<td style="font-size:0.82rem;max-width:320px;word-break:break-word;">' + (llmOut || '<span style="color:var(--muted);">&mdash;</span>') + '</td>'
+            + '<td style="font-size:0.82rem;">' + (modelTime || '<span style="color:var(--muted);">&mdash;</span>') + '</td>'
+            + '</tr>';
+        }
+        nlBody.innerHTML = html;
+        var rows = nlBody.querySelectorAll('tr.nl-row');
+        rows.forEach(function(tr) {
+          tr.addEventListener('click', function() {
+            var idx = parseInt(tr.getAttribute('data-nl-idx'), 10);
+            var existing = tr.nextElementSibling;
+            if (existing && existing.classList && existing.classList.contains('nl-detail')) {
+              existing.parentNode.removeChild(existing);
+              tr.cells[0].innerHTML = '&#9656;';
+              return;
+            }
+            var detail = document.createElement('tr');
+            detail.className = 'nl-detail';
+            detail.innerHTML = '<td colspan="7" style="padding:0;">' + nlRenderDetail(logs[idx]) + '</td>';
+            tr.parentNode.insertBefore(detail, tr.nextSibling);
+            tr.cells[0].innerHTML = '&#9662;';
+          });
+        });
+      }
+
+      nlFetchBtn.addEventListener('click', function() {
+        var cid = nlConnInput.value.trim();
+        var rid = nlReqInput ? nlReqInput.value.trim() : '';
+        nlApiErr.style.display = 'none';
+        nlResultEl.style.display = 'none';
+        nlDownloadBtn.style.display = 'none';
+        nlDownloadJsonBtn.style.display = 'none';
+
+        if (!cid && !rid) {
+          nlApiErr.textContent = 'Please enter a Connection ID (or Request ID).';
+          nlApiErr.style.display = 'block';
+          window._loga.nl = Object.assign(window._loga.nl || {}, { ready: true, error: 'Connection ID or Request ID required.' });
+          var sk0 = window._loga.nl._pendingResolve; if (sk0) { delete window._loga.nl._pendingResolve; sk0(window._loga.nl); }
+          return;
+        }
+
+        nlFetchBtn.disabled = true;
+        nlFetchBtn.textContent = 'Fetching...';
+        var nlTm = parseInt(nlTimeSelect.value, 10);
+        if (isNaN(nlTm)) nlTm = 0;
+        var payload = { connection_id: cid, request_id: rid, time_minutes: nlTm, max_logs: 1000 };
+        lastNlPayload = payload;
+        var laResult = { source: 'nl', identifiers: { connection_id: cid, request_id: rid } };
+
+        fetch('/api/nlp-server/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        .then(function(res) { return res.json().then(function(d) { return { status: res.status, data: d }; }); })
+        .then(function(r) {
+          if (!r.data.ok) {
+            nlApiErr.textContent = r.data.error || ('HTTP ' + r.status);
+            nlApiErr.style.display = 'block';
+            laResult.error = r.data.error || ('HTTP ' + r.status);
+            return;
+          }
+          var data = r.data;
+          var logs = data.logs || [];
+          lastNlLogs = logs;
+          document.getElementById('nlTotalCount').textContent = Number(data.total || 0).toLocaleString();
+          document.getElementById('nlScannedCount').textContent = Number(data.scanned || 0).toLocaleString();
+          document.getElementById('nlLogCount').textContent = '(showing ' + logs.length + ' of ' + Number(data.total || 0).toLocaleString() + ')';
+          nlRenderBody(logs);
+          nlResultEl.style.display = '';
+          if (logs.length) {
+            nlDownloadBtn.style.display = '';
+            nlDownloadJsonBtn.style.display = '';
+          }
+          laResult.logs = logs;
+          laResult.total = data.total || 0;
+          laResult.scanned = data.scanned || 0;
+          laResult.payload = payload;
+        })
+        .catch(function(e) {
+          nlApiErr.textContent = 'Error: ' + (e.message || e);
+          nlApiErr.style.display = 'block';
+          laResult.error = String(e.message || e);
+        })
+        .finally(function() {
+          nlFetchBtn.disabled = false;
+          nlFetchBtn.textContent = 'Fetch Logs';
+          laResult.ready = true;
+          var prev = window._loga.nl || {};
+          var pendingResolve = prev._pendingResolve;
+          window._loga.nl = laResult;
+          if (pendingResolve) {
+            pendingResolve(laResult);
+          }
+        });
+      });
+
+      function nlDownloadAs(format) {
+        var btn = format === 'json' ? nlDownloadJsonBtn : nlDownloadBtn;
+        var label = format === 'json' ? 'Download JSON' : 'Download Table';
+        var payload = lastNlPayload ? Object.assign({}, lastNlPayload, { format: format, max_logs: 10000 }) : null;
+        if (!payload || (!payload.connection_id && !payload.request_id)) {
+          nlApiErr.textContent = 'Fetch logs first before downloading.';
+          nlApiErr.style.display = 'block';
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Preparing...';
+        fetch('/api/download/nlp-server-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        .then(function(res) {
+          if (!res.ok) return res.json().then(function(d) { throw new Error(d && d.error ? d.error : ('HTTP ' + res.status)); });
+          var disposition = res.headers.get('Content-Disposition') || '';
+          var match = disposition.match(/filename=("?)([^";]+)\1/);
+          var filename = match ? match[2] : ('nlp_server_logs.' + format);
+          return res.blob().then(function(blob) { return { blob: blob, filename: filename }; });
+        })
+        .then(function(r) {
+          var url = URL.createObjectURL(r.blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = r.filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        })
+        .catch(function(e) {
+          nlApiErr.textContent = 'Download error: ' + (e.message || e);
+          nlApiErr.style.display = 'block';
+        })
+        .finally(function() {
+          btn.disabled = false;
+          btn.textContent = label;
+        });
+      }
+
+      nlDownloadBtn.addEventListener('click', function() { nlDownloadAs('csv'); });
+      nlDownloadJsonBtn.addEventListener('click', function() { nlDownloadAs('json'); });
+    })();
+
+    // --- Unified Log Analyser controller (drives all 4 sources from one form) ---
     (function() {
       var laConnInput = document.getElementById('laConnectionId');
       var laCtxInput = document.getElementById('laContextId');
       var laAptInput = document.getElementById('laAptName');
+      var laQuestionInput = document.getElementById('laQuestion');
       var laTimeSelect = document.getElementById('laTimeFilter');
       var laFetchBtn = document.getElementById('laFetchBtn');
       var laAnalyseBtn = document.getElementById('laAnalyseBtn');
@@ -3765,9 +4259,32 @@
       var laAnalysisResult = document.getElementById('laAnalysisResult');
       var laAnalysisBody = document.getElementById('laAnalysisBody');
 
+      var laModePill = document.getElementById('laModePill');
+      var laModePillText = document.getElementById('laModePillText');
+      function syncQuestionMode() {
+        var hasQ = !!laQuestionInput.value.trim();
+        laAnalyseBtn.textContent = hasQ ? 'Answer my question (AI)' : 'Analyse all (combined RCA)';
+        if (laModePill && laModePillText) {
+          laModePillText.textContent = hasQ ? 'AI Q&A mode' : 'RCA mode';
+          laModePill.style.color = hasQ ? 'var(--accent-light)' : 'var(--muted)';
+          laModePill.style.background = hasQ ? 'var(--surface)' : 'var(--surface-3)';
+          laModePill.style.borderColor = hasQ ? 'var(--accent-light)' : 'var(--border)';
+        }
+      }
+      try {
+        var savedQuestion = localStorage.getItem('logAnalyser.focusQuestion');
+        if (savedQuestion) laQuestionInput.value = savedQuestion;
+      } catch (e) { /* localStorage may be unavailable */ }
+      laQuestionInput.addEventListener('input', function() {
+        try { localStorage.setItem('logAnalyser.focusQuestion', laQuestionInput.value); } catch (e) {}
+        syncQuestionMode();
+      });
+      syncQuestionMode();
+
       var beView = document.getElementById('botEngineView');
       var imView = document.getElementById('integrationManagerView');
       var ssView = document.getElementById('streamServerLogsView');
+      var nlView = document.getElementById('nlpServerView');
 
       // Surface the hidden per-source download buttons through unified-section buttons.
       function relayDownload(visibleId, hiddenId) {
@@ -3785,6 +4302,8 @@
       relayDownload('laImDownloadJsonBtn', 'imDownloadJsonBtn');
       relayDownload('laSsDownloadBtn', 'ssDownloadBtn');
       relayDownload('laSsDownloadJsonBtn', 'ssDownloadJsonBtn');
+      relayDownload('laNlDownloadBtn', 'nlDownloadBtn');
+      relayDownload('laNlDownloadJsonBtn', 'nlDownloadJsonBtn');
 
       function awaitFetch(source) {
         return new Promise(function(resolve) {
@@ -3830,18 +4349,28 @@
         laApiErr.style.display = 'none';
         laAnalyseBtn.style.display = 'none';
         laAnalysisResult.style.display = 'none';
-        document.getElementById('laBeDownloadBtn').style.display = 'none';
-        document.getElementById('laBeDownloadJsonBtn').style.display = 'none';
-        document.getElementById('laImDownloadBtn').style.display = 'none';
-        document.getElementById('laImDownloadJsonBtn').style.display = 'none';
-        document.getElementById('laSsDownloadBtn').style.display = 'none';
-        document.getElementById('laSsDownloadJsonBtn').style.display = 'none';
+        ['laBeDownloadBtn', 'laBeDownloadJsonBtn',
+         'laImDownloadBtn', 'laImDownloadJsonBtn',
+         'laSsDownloadBtn', 'laSsDownloadJsonBtn',
+         'laNlDownloadBtn', 'laNlDownloadJsonBtn',
+         'laDownloadAllBtn', 'laDownloadAllJsonBtn'].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        });
+      }
+
+      function _viewToSource(viewEl) {
+        if (viewEl === beView) return 'be';
+        if (viewEl === imView) return 'im';
+        if (viewEl === ssView) return 'ss';
+        if (viewEl === nlView) return 'nl';
+        return '';
       }
 
       function showSection(viewEl, status, bannerHtml, pill) {
         if (viewEl) viewEl.style.display = '';
-        _logaSetBanner(viewEl === beView ? 'be' : viewEl === imView ? 'im' : 'ss', status, bannerHtml);
-        var src = viewEl === beView ? 'be' : viewEl === imView ? 'im' : 'ss';
+        var src = _viewToSource(viewEl);
+        _logaSetBanner(src, status, bannerHtml);
         _logaSetPill(src, pill.status, pill.detail);
       }
 
@@ -3863,10 +4392,11 @@
         laFetchBtn.textContent = 'Fetching from all sources...';
 
         // Reveal sections immediately with a "Fetching..." banner so the user sees progress.
-        var bePromise, imPromise, ssPromise;
+        var bePromise, imPromise, ssPromise, nlPromise;
         var beUsable = !!(conn || ctx);
         var imUsable = !!conn;
         var ssUsable = !!(ctx || apt || conn);
+        var nlUsable = !!conn;
 
         if (beUsable) {
           beView.style.display = '';
@@ -3922,43 +4452,146 @@
           ssPromise = Promise.resolve(ssSkip);
         }
 
-        Promise.allSettled([bePromise, imPromise, ssPromise]).then(function(arr) {
+        if (nlUsable) {
+          if (nlView) nlView.style.display = '';
+          _logaSetBanner('nl', 'warn', '<span style="color:var(--amber);">Fetching\u2026</span>');
+          _logaSetPill('nl', 'warn', '— fetching\u2026');
+          nlPromise = runOneSource('nl', {
+            nlConnectionId: conn,
+            nlTimeFilter: String(tm),
+          }, 'nlFetchBtn');
+        } else {
+          if (nlView) nlView.style.display = '';
+          var nlSkip = { skipped: true, reason: 'No Connection ID provided', source: 'nl', ready: true };
+          window._loga.nl = nlSkip;
+          var nlBan = bannerForResult(nlSkip);
+          showSection(nlView, nlBan.status, nlBan.text, pillForResult(nlSkip));
+          nlPromise = Promise.resolve(nlSkip);
+        }
+
+        Promise.allSettled([bePromise, imPromise, ssPromise, nlPromise]).then(function(arr) {
           var beR = arr[0].status === 'fulfilled' ? arr[0].value : { error: String(arr[0].reason) };
           var imR = arr[1].status === 'fulfilled' ? arr[1].value : { error: String(arr[1].reason) };
           var ssR = arr[2].status === 'fulfilled' ? arr[2].value : { error: String(arr[2].reason) };
+          var nlR = arr[3].status === 'fulfilled' ? arr[3].value : { error: String(arr[3].reason) };
 
           var beBan = bannerForResult(beR);
           var imBan = bannerForResult(imR);
           var ssBan = bannerForResult(ssR);
+          var nlBan = bannerForResult(nlR);
           showSection(beView, beBan.status, beBan.text, pillForResult(beR));
           showSection(imView, imBan.status, imBan.text, pillForResult(imR));
           showSection(ssView, ssBan.status, ssBan.text, pillForResult(ssR));
+          showSection(nlView, nlBan.status, nlBan.text, pillForResult(nlR));
 
           var beHas = beR && beR.logs && beR.logs.length > 0;
           var imHas = imR && imR.logs && imR.logs.length > 0;
           var ssHas = ssR && ssR.logs && ssR.logs.length > 0;
+          var nlHas = nlR && nlR.logs && nlR.logs.length > 0;
           if (beHas) { document.getElementById('laBeDownloadBtn').style.display = ''; document.getElementById('laBeDownloadJsonBtn').style.display = ''; }
           if (imHas) { document.getElementById('laImDownloadBtn').style.display = ''; document.getElementById('laImDownloadJsonBtn').style.display = ''; }
           if (ssHas) { document.getElementById('laSsDownloadBtn').style.display = ''; document.getElementById('laSsDownloadJsonBtn').style.display = ''; }
+          if (nlHas) { document.getElementById('laNlDownloadBtn').style.display = ''; document.getElementById('laNlDownloadJsonBtn').style.display = ''; }
 
-          if (beHas || imHas || ssHas) {
+          if (beHas || imHas || ssHas || nlHas) {
             laAnalyseBtn.style.display = '';
+            var dlAll = document.getElementById('laDownloadAllBtn');
+            var dlAllJson = document.getElementById('laDownloadAllJsonBtn');
+            if (dlAll) dlAll.style.display = '';
+            if (dlAllJson) dlAllJson.style.display = '';
+            syncQuestionMode();
           }
         }).finally(function() {
           laFetchBtn.disabled = false;
-          laFetchBtn.textContent = 'Fetch from all 3 sources';
+          laFetchBtn.textContent = 'Fetch from all 4 sources';
         });
       });
 
+      // --- Combined "Download all" — bundles already-fetched logs from all 4 sources ---
+      function laDownloadAll(format) {
+        var btn = format === 'json' ? document.getElementById('laDownloadAllJsonBtn') : document.getElementById('laDownloadAllBtn');
+        var label = format === 'json' ? 'Download all (JSON)' : 'Download all (ZIP)';
+        var beLogs = (window._loga.be && window._loga.be.logs) || [];
+        var imLogs = (window._loga.im && window._loga.im.logs) || [];
+        var ssLogs = (window._loga.ss && window._loga.ss.logs) || [];
+        var nlLogs = (window._loga.nl && window._loga.nl.logs) || [];
+        if (!beLogs.length && !imLogs.length && !ssLogs.length && !nlLogs.length) {
+          laApiErr.textContent = 'Nothing to download — fetch from at least one source first.';
+          laApiErr.style.display = 'block';
+          return;
+        }
+        var payload = {
+          format: format,
+          bot_engine_logs: beLogs,
+          integration_manager_logs: imLogs,
+          stream_server_logs: ssLogs,
+          nlp_server_logs: nlLogs,
+          identifiers: {
+            connection_id: laConnInput.value.trim(),
+            context_id: laCtxInput.value.trim(),
+            apt_name: laAptInput.value.trim(),
+          },
+        };
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Preparing...';
+        }
+        laApiErr.style.display = 'none';
+        fetch('/api/log-analyser/download-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        .then(function(res) {
+          if (!res.ok) {
+            return res.json().then(function(d) { throw new Error(d && d.error ? d.error : ('HTTP ' + res.status)); });
+          }
+          var disposition = res.headers.get('Content-Disposition') || '';
+          var match = disposition.match(/filename=("?)([^";]+)\1/);
+          var fallback = format === 'json' ? 'combined_logs.json' : 'combined_logs.zip';
+          var filename = match ? match[2] : fallback;
+          return res.blob().then(function(blob) { return { blob: blob, filename: filename }; });
+        })
+        .then(function(r) {
+          var url = URL.createObjectURL(r.blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = r.filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        })
+        .catch(function(e) {
+          laApiErr.textContent = 'Download error: ' + (e.message || e);
+          laApiErr.style.display = 'block';
+        })
+        .finally(function() {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = label;
+          }
+        });
+      }
+
+      var dlAllBtn = document.getElementById('laDownloadAllBtn');
+      if (dlAllBtn) dlAllBtn.addEventListener('click', function() { laDownloadAll('zip'); });
+      var dlAllJsonBtn = document.getElementById('laDownloadAllJsonBtn');
+      if (dlAllJsonBtn) dlAllJsonBtn.addEventListener('click', function() { laDownloadAll('json'); });
+
       // --- Combined "Analyse all" — cross-source RCA ---
-      function renderCombinedAnalysis(text, providerKey) {
+      function renderCombinedAnalysis(text, providerKey, focusQuestion, providerNote) {
         var sectionMap = {
+          'Question': { icon: '&#10067;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--accent-light)' },
+          'Answer': { icon: '&#9989;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--accent)' },
+          'Evidence': { icon: '&#128269;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--cyan)' },
           'Session Overview': { icon: '&#128196;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--accent)' },
           'Issues Found': { icon: '&#9888;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--danger)' },
           'Cross-Source Correlation': { icon: '&#128279;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--cyan)' },
           'Timeline Analysis': { icon: '&#128337;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--border)' },
           'Root Cause': { icon: '&#128269;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--muted)' },
           'Verdict': { icon: '&#9989;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--success)' },
+          'Off-platform checks': { icon: '&#128737;', color: 'var(--text)', bg: 'var(--surface-2)', border: 'var(--amber)' },
         };
         var sections = [];
         var currentTitle = null;
@@ -3977,6 +4610,9 @@
         if (sections.length === 0) {
           sections = [{ title: 'Session Overview', body: text }];
         }
+        if (focusQuestion && !sections.some(function(s) { return s.title === 'Question'; })) {
+          sections.unshift({ title: 'Question', body: focusQuestion });
+        }
 
         var verdictBadge = document.getElementById('laVerdictBadge');
         verdictBadge.style.display = 'none';
@@ -3985,7 +4621,10 @@
         if (providerKey === 'builtin') providerLabel = 'Built-in deterministic analyser';
         else if (providerKey === 'openai') providerLabel = 'OpenAI-compatible API';
         else providerLabel = 'LLM';
-        metaEl.textContent = providerLabel + ' \u2022 ' + new Date().toLocaleTimeString() + ' \u2022 cross-source RCA';
+        var modeLabel = focusQuestion ? 'question-driven' : 'cross-source RCA';
+        var metaParts = [providerLabel, new Date().toLocaleTimeString(), modeLabel];
+        if (providerNote) metaParts.push(providerNote);
+        metaEl.textContent = metaParts.join(' \u2022 ');
 
         var html = '';
         sections.forEach(function(sec) {
@@ -4002,7 +4641,7 @@
             .replace(/HIGH/g, '<span style="background:var(--emerald-dim);color:var(--emerald);padding:0.1rem 0.4rem;border-radius:4px;font-size:0.78rem;font-weight:600;">HIGH</span>')
             .replace(/MEDIUM/g, '<span style="background:var(--amber-dim);color:var(--amber);padding:0.1rem 0.4rem;border-radius:4px;font-size:0.78rem;font-weight:600;">MEDIUM</span>')
             .replace(/LOW/g, '<span style="background:var(--surface-3);color:var(--muted);padding:0.1rem 0.4rem;border-radius:4px;font-size:0.78rem;font-weight:600;">LOW</span>')
-            .replace(/(Bot Engine|Integration Manager|Stream Server)/g, '<strong style="color:var(--cyan);">$1</strong>')
+            .replace(/(Bot Engine|Integration Manager|Stream Server|NLP Server)/g, '<strong style="color:var(--cyan);">$1</strong>')
             .replace(/\n/g, '<br>');
 
           html += '<div style="background:' + cfg.bg + ';border-left:3px solid ' + cfg.border + ';border-radius:8px;padding:0.9rem 1.1rem;margin-bottom:0.75rem;">'
@@ -4031,26 +4670,36 @@
         var beLogs = (window._loga.be && window._loga.be.logs) || [];
         var imLogs = (window._loga.im && window._loga.im.logs) || [];
         var ssLogs = (window._loga.ss && window._loga.ss.logs) || [];
-        if (!beLogs.length && !imLogs.length && !ssLogs.length) {
+        var nlLogs = (window._loga.nl && window._loga.nl.logs) || [];
+        if (!beLogs.length && !imLogs.length && !ssLogs.length && !nlLogs.length) {
           laApiErr.textContent = 'No logs to analyse — fetch from at least one source first.';
           laApiErr.style.display = 'block';
           return;
         }
+        var question = laQuestionInput.value.trim();
+        var defaultLabel = question ? 'Answer my question (AI)' : 'Analyse all (combined RCA)';
         laApiErr.style.display = 'none';
         laAnalyseBtn.disabled = true;
-        laAnalyseBtn.textContent = 'Analysing all sources...';
+        laAnalyseBtn.textContent = question ? 'Asking the AI...' : 'Analysing all sources...';
         laAnalysisResult.style.display = 'none';
 
         var payload = {
           bot_engine_logs: beLogs,
           integration_manager_logs: imLogs,
           stream_server_logs: ssLogs,
+          nlp_server_logs: nlLogs,
+          question: question,
           identifiers: {
             connection_id: laConnInput.value.trim(),
             context_id: laCtxInput.value.trim(),
             apt_name: laAptInput.value.trim(),
           },
         };
+        try {
+          console.log('[log-analyser] mode=' + (question ? 'AI Q&A' : 'deterministic RCA') +
+                      ' question=' + JSON.stringify(question) +
+                      ' counts=BE:' + beLogs.length + ' IM:' + imLogs.length + ' SS:' + ssLogs.length + ' NL:' + nlLogs.length);
+        } catch (e) {}
 
         fetch('/api/log-analyser/analyse-all', {
           method: 'POST',
@@ -4063,7 +4712,7 @@
         })
         .then(function(data) {
           if (!data.ok) throw new Error(data.error || 'Analysis failed');
-          renderCombinedAnalysis(data.analysis || '', data.log_analysis_llm);
+          renderCombinedAnalysis(data.analysis || '', data.log_analysis_llm, data.question || question, data.note || '');
         })
         .catch(function(e) {
           laApiErr.textContent = 'Analysis error: ' + (e.message || e);
@@ -4071,8 +4720,116 @@
         })
         .finally(function() {
           laAnalyseBtn.disabled = false;
-          laAnalyseBtn.textContent = 'Analyse all (combined RCA)';
+          laAnalyseBtn.textContent = defaultLabel;
         });
+      });
+
+      // --- Customer-facing RCA draft (turns the analysis above into an email body) ---
+      var laRcaDraftBtn = document.getElementById('laRcaDraftBtn');
+      var laRcaDraftErr = document.getElementById('laRcaDraftErr');
+      var laRcaDraftWrap = document.getElementById('laRcaDraftWrap');
+      var laRcaDraftOut = document.getElementById('laRcaDraftOut');
+      var laRcaDraftMeta = document.getElementById('laRcaDraftMeta');
+      var laRcaDraftCopyBtn = document.getElementById('laRcaDraftCopyBtn');
+      var laRcaDraftEditBtn = document.getElementById('laRcaDraftEditBtn');
+      var laRcaDraftRegenBtn = document.getElementById('laRcaDraftRegenBtn');
+
+      window._loga._lastAnalysisText = '';
+      var origRender = renderCombinedAnalysis;
+      renderCombinedAnalysis = function(text, providerKey, focusQuestion, providerNote) {
+        window._loga._lastAnalysisText = text || '';
+        if (laRcaDraftWrap) laRcaDraftWrap.style.display = 'none';
+        if (laRcaDraftErr) { laRcaDraftErr.style.display = 'none'; laRcaDraftErr.textContent = ''; }
+        return origRender(text, providerKey, focusQuestion, providerNote);
+      };
+
+      function buildRcaInput() {
+        var analysis = (window._loga._lastAnalysisText || '').trim();
+        if (!analysis) return '';
+        var q = (laQuestionInput.value || '').trim();
+        var ids = {
+          connection_id: laConnInput.value.trim(),
+          context_id: laCtxInput.value.trim(),
+          apt_name: laAptInput.value.trim(),
+        };
+        var header = [];
+        if (q) header.push('USER QUESTION: ' + q);
+        if (ids.connection_id) header.push('Connection ID: ' + ids.connection_id);
+        if (ids.context_id) header.push('Context ID: ' + ids.context_id);
+        if (ids.apt_name) header.push('APT identifier: ' + ids.apt_name);
+        var bits = [];
+        if (header.length) bits.push(header.join('\n'));
+        bits.push('TECHNICAL ANALYSIS (do not quote internal module/api names verbatim):');
+        bits.push(analysis);
+        return bits.join('\n\n');
+      }
+
+      function runRcaDraft() {
+        var input = buildRcaInput();
+        if (!input) {
+          laRcaDraftErr.textContent = 'Run an analysis first — the RCA draft uses the analysis text above.';
+          laRcaDraftErr.style.display = 'block';
+          return;
+        }
+        laRcaDraftErr.style.display = 'none';
+        laRcaDraftBtn.disabled = true;
+        var origText = laRcaDraftBtn.textContent;
+        laRcaDraftBtn.textContent = 'Drafting...';
+        laRcaDraftRegenBtn.disabled = true;
+        fetch('/api/rephrase', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: input, mode: 'rca' }),
+        })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (!res.j.ok) throw new Error(res.j.error || 'Draft request failed');
+          laRcaDraftOut.value = res.j.rephrased || '';
+          laRcaDraftMeta.textContent = 'Generated ' + new Date().toLocaleTimeString() + ' \u2022 review & edit before sending';
+          laRcaDraftWrap.style.display = '';
+          laRcaDraftWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .catch(function(e) {
+          laRcaDraftErr.textContent = 'Draft error: ' + (e.message || e);
+          laRcaDraftErr.style.display = 'block';
+        })
+        .finally(function() {
+          laRcaDraftBtn.disabled = false;
+          laRcaDraftBtn.textContent = origText;
+          laRcaDraftRegenBtn.disabled = false;
+        });
+      }
+
+      if (laRcaDraftBtn) laRcaDraftBtn.addEventListener('click', runRcaDraft);
+      if (laRcaDraftRegenBtn) laRcaDraftRegenBtn.addEventListener('click', runRcaDraft);
+      if (laRcaDraftCopyBtn) laRcaDraftCopyBtn.addEventListener('click', function() {
+        if (!laRcaDraftOut.value) return;
+        try {
+          laRcaDraftOut.select();
+          navigator.clipboard.writeText(laRcaDraftOut.value).then(function() {
+            var orig = laRcaDraftCopyBtn.textContent;
+            laRcaDraftCopyBtn.textContent = 'Copied';
+            setTimeout(function() { laRcaDraftCopyBtn.textContent = orig; }, 1400);
+          }, function() {
+            document.execCommand && document.execCommand('copy');
+          });
+        } catch (e) {}
+      });
+      if (laRcaDraftEditBtn) laRcaDraftEditBtn.addEventListener('click', function() {
+        var text = laRcaDraftOut.value || '';
+        if (!text) return;
+        var rephraseInput = document.getElementById('rephraseInput');
+        var rephraseMode = document.getElementById('rephraseMode');
+        if (rephraseInput) rephraseInput.value = text;
+        if (rephraseMode) {
+          var hasEmail = false;
+          for (var i = 0; i < rephraseMode.options.length; i++) {
+            if (rephraseMode.options[i].value === 'email') { hasEmail = true; break; }
+          }
+          if (hasEmail) rephraseMode.value = 'email';
+        }
+        if (typeof showView === 'function') showView('rephraseView');
+        if (rephraseInput) rephraseInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     })();
 
@@ -4505,6 +5262,7 @@
         fetch('/api/db/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
         fetch('/api/symitar/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
         fetch('/api/stream-server-logs/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
+        fetch('/api/nlp-server/status').then(function(r) { return r.json(); }).catch(function() { return {}; }),
       ]).then(function(results) {
         var cfg = results[0];
         var osStatus = results[1];
@@ -4516,6 +5274,7 @@
         var dbStatus = results[7];
         var symStatus = results[8];
         var ssLogsStatus = results[9];
+        var nlLogsStatus = results[10] || {};
 
         function statusDot(connected, notConfigured) {
           if (notConfigured) return '<span style="color:var(--muted);font-weight:600;">&#9679; Not configured</span>';
@@ -4576,6 +5335,7 @@
         var be = cfg.bot_engine || {};
         var im = cfg.integration_manager || {};
         var ssLogs = cfg.stream_server_logs || {};
+        var nlLogs = cfg.nlp_server_logs || {};
         var tw = cfg.twilio || {};
         var llm = cfg.llm || {};
         var k8s = cfg.kubernetes || {};
@@ -4645,6 +5405,17 @@
           + readonlyRow('Time Field', ssLogs.time_field)
           + readonlyRow('User', ssLogs.opensearch_user)
           + readonlyRow('Password', ssLogs.opensearch_password)
+        );
+
+        // NLP Server Default Logs (by Connection ID)
+        html += section('NLP Server Default Logs', '&#129504;', statusDot(nlLogsStatus.connected, !nlLogsStatus.configured),
+          readonlyRow('OpenSearch URL', nlLogs.opensearch_url)
+          + row('NLP Server Index', inp('OPENSEARCH_NLP_SERVER_INDEX', nlLogs.nlp_server_index, {placeholder:'default.nlp-server.interface-common*'}), {hint:'Index pattern for the NLP/LLM interface logs (function_active / top_level / function_initial parses).'})
+          + row('Connection Field', inp('OPENSEARCH_NLP_SERVER_CONNECTION_FIELD', nlLogs.connection_field, {placeholder:'metadata.connection_id'}), {hint:'Indexed connection identifier — used as the Connection ID filter.'})
+          + row('Request Field', inp('OPENSEARCH_NLP_SERVER_REQUEST_FIELD', nlLogs.request_field, {placeholder:'metadata.request_id'}))
+          + readonlyRow('Time Field', nlLogs.time_field)
+          + readonlyRow('User', nlLogs.opensearch_user)
+          + readonlyRow('Password', nlLogs.opensearch_password)
         );
 
         // Twilio
@@ -5123,6 +5894,298 @@
         });
       });
       if (refreshBtn) refreshBtn.addEventListener('click', function() { window._refreshTodos(); });
+    })();
+
+    // --- Session RCA agent ---
+    (function sessionRcaTool() {
+      var state = {
+        mode: 'fetch',
+        currentDraft: 'rca',
+        result: null,
+      };
+
+      function $id(id) { return document.getElementById(id); }
+      function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+      function showErr(msg) { var e = $id('srcaErr'); if (!e) return; e.style.display = ''; e.textContent = msg; }
+      function clearErr() { var e = $id('srcaErr'); if (!e) return; e.style.display = 'none'; e.textContent = ''; }
+      function setHint(msg) { var h = $id('srcaHint'); if (!h) return; if (!msg) { h.style.display = 'none'; h.textContent = ''; } else { h.style.display = ''; h.textContent = msg; } }
+      function setActive(btn, active) {
+        if (!btn) return;
+        if (active) {
+          btn.classList.remove('secondary');
+          btn.style.background = '';
+          btn.style.color = '';
+          btn.style.border = '';
+          btn.style.boxShadow = '';
+          btn.style.fontWeight = '';
+          btn.setAttribute('aria-selected', 'true');
+        } else {
+          btn.classList.add('secondary');
+          btn.style.background = 'var(--surface)';
+          btn.style.color = 'var(--muted)';
+          btn.style.border = '1px solid var(--border)';
+          btn.style.boxShadow = 'none';
+          btn.style.fontWeight = '500';
+          btn.setAttribute('aria-selected', 'false');
+        }
+      }
+
+      function switchMode(mode) {
+        state.mode = mode;
+        $id('srcaModeFetch').style.display = mode === 'fetch' ? '' : 'none';
+        $id('srcaModePaste').style.display = mode === 'paste' ? '' : 'none';
+        setActive($id('srcaTabFetch'), mode === 'fetch');
+        setActive($id('srcaTabPaste'), mode === 'paste');
+      }
+
+      function switchDraft(name) {
+        state.currentDraft = name;
+        ['rca', 'client', 'internal'].forEach(function(k) {
+          var b = document.querySelector('[data-srca-tab="' + k + '"]');
+          setActive(b, k === name);
+        });
+        if (!state.result) return;
+        var key = name === 'rca' ? 'rca_markdown' : (name === 'client' ? 'client_markdown' : 'internal_markdown');
+        $id('srcaDraft').textContent = state.result.drafts[key] || '';
+      }
+
+      function modePillColour(id) {
+        switch (id) {
+          case 'ORG_ONLY_AT_LOGIN':       return ['#fb923c', 'rgba(251,146,60,0.18)'];
+          case 'PERSON_STUB_AT_PASSWORD': return ['#f87171', 'rgba(248,113,113,0.18)'];
+          case 'PASSWORD_LOCAL_FALSE':    return ['#fbbf24', 'rgba(251,191,36,0.20)'];
+          case 'NO_MATCH':                return ['#a78bfa', 'rgba(167,139,250,0.18)'];
+          case 'LOCKOUT':                 return ['#fb7185', 'rgba(251,113,133,0.18)'];
+          case 'UPSTREAM_5XX':            return ['#f87171', 'rgba(248,113,113,0.18)'];
+          case 'UPSTREAM_TIMEOUT':        return ['#fbbf24', 'rgba(251,191,36,0.20)'];
+          case 'DROPPED_SESSION':         return ['#8b93a1', 'rgba(139,147,161,0.18)'];
+          case 'SS_ERROR':                return ['#f472b6', 'rgba(244,114,182,0.18)'];
+          default:                        return ['#5b8def', 'rgba(91,141,239,0.18)'];
+        }
+      }
+
+      function renderResult(res) {
+        state.result = res;
+        var scope = res.scope || {};
+        var scopeEl = $id('srcaScope');
+        var rel = (scope.related_connection_ids || []).join(', ') || '(none)';
+        var win = scope.time_window_utc || ['', ''];
+        var qLine = res.question
+          ? '<div><strong style="color:var(--text);">Question:</strong> <em style="color:var(--text);">' + esc(res.question) + '</em></div>'
+          : '<div style="color:var(--muted);font-style:italic;">No question — generic structured RCA</div>';
+        var t = res.timings_ms || {};
+        var tParts = [];
+        if (t.primary_fetch_ms != null) {
+          var primFmt = Math.round(t.primary_fetch_ms / 100) / 10 + 's';
+          var p = t.primary_per_source || {};
+          var sub = [];
+          if (p.be_ms != null) sub.push('BE ' + Math.round(p.be_ms / 100) / 10 + 's·' + (p.be_count || 0));
+          if (p.im_ms != null) sub.push('IM ' + Math.round(p.im_ms / 100) / 10 + 's·' + (p.im_count || 0));
+          if (p.ss_ms != null) sub.push('SS ' + Math.round(p.ss_ms / 100) / 10 + 's·' + (p.ss_count || 0));
+          if (sub.length) primFmt += ' [' + sub.join(' / ') + ']';
+          tParts.push('primary fetch ' + primFmt);
+        }
+        if (t.correlate_lookup_ms != null) tParts.push('correlate ' + Math.round(t.correlate_lookup_ms / 100) / 10 + 's');
+        if (t.related_fetch_ms != null) tParts.push('related fetch ' + Math.round(t.related_fetch_ms / 100) / 10 + 's (' + (t.related_count || 0) + ')');
+        if (t.analyse_ms != null) tParts.push('analyse ' + Math.round(t.analyse_ms / 100) / 10 + 's');
+        if (typeof t.include_stream_server !== 'undefined') tParts.push('SS=' + (t.include_stream_server ? 'on' : 'off'));
+        var timingLine = tParts.length ? '<div style="color:var(--muted);font-size:0.78rem;">timings: ' + esc(tParts.join('  ·  ')) + '</div>' : '';
+
+        scopeEl.innerHTML = ''
+          + qLine
+          + '<div><strong style="color:var(--text);">Primary connection:</strong> <code>' + esc(scope.primary_connection_id || '?') + '</code></div>'
+          + '<div><strong style="color:var(--text);">Related calls:</strong> <code>' + esc(rel) + '</code></div>'
+          + '<div><strong style="color:var(--text);">Tenant:</strong> <code>' + esc(scope.tenant || '?') + '</code> &nbsp;·&nbsp; <strong style="color:var(--text);">Caller:</strong> <code>' + esc(scope.user_phone_masked || '?') + '</code></div>'
+          + '<div><strong style="color:var(--text);">UTC window:</strong> <code>' + esc(win[0] || '?') + '</code> → <code>' + esc(win[1] || '?') + '</code></div>'
+          + '<div style="color:var(--muted);font-size:0.78rem;">prose by ' + esc(res.log_analysis_llm || 'builtin') + '</div>'
+          + timingLine;
+
+        var modesEl = $id('srcaModes');
+        modesEl.innerHTML = '';
+        var modes = res.detected_modes || [];
+        if (!modes.length) {
+          modesEl.innerHTML = '<span style="font-size:0.78rem;color:var(--muted);">No deterministic modes triggered — see the prose draft for the LLM\'s reading.</span>';
+        } else {
+          modes.forEach(function(m) {
+            var c = modePillColour(m);
+            var pill = document.createElement('span');
+            pill.style.cssText = 'display:inline-flex;align-items:center;padding:0.2rem 0.65rem;border-radius:999px;font-size:0.74rem;font-weight:600;letter-spacing:0.02em;background:' + c[1] + ';color:' + c[0] + ';border:1px solid ' + c[0] + ';';
+            pill.textContent = m;
+            modesEl.appendChild(pill);
+          });
+        }
+
+        switchDraft(state.currentDraft);
+        try {
+          $id('srcaSignals').textContent = JSON.stringify(res.signals || {}, null, 2);
+        } catch (e) {
+          $id('srcaSignals').textContent = '(failed to stringify signals)';
+        }
+        $id('srcaResultCard').style.display = '';
+      }
+
+      function parsePasteJson(raw, label) {
+        var s = (raw || '').trim();
+        if (!s) return [];
+        try {
+          var parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) return parsed;
+          if (parsed && Array.isArray(parsed.logs)) return parsed.logs;
+          if (parsed && Array.isArray(parsed.hits)) return parsed.hits;
+          throw new Error('expected an array');
+        } catch (e) {
+          throw new Error(label + ': ' + e.message);
+        }
+      }
+
+      var _elapsedTimer = null;
+      function _startElapsed(noteFn) {
+        var t0 = Date.now();
+        _elapsedTimer = setInterval(function() {
+          var s = Math.round((Date.now() - t0) / 1000);
+          noteFn(s);
+        }, 500);
+        noteFn(0);
+      }
+      function _stopElapsed() {
+        if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null; }
+      }
+
+      function runAnalyse() {
+        clearErr();
+        $id('srcaResultCard').style.display = 'none';
+        var btn = $id('srcaAnalyseBtn');
+        btn.disabled = true;
+        var prevText = btn.textContent;
+        btn.textContent = 'Analysing…';
+
+        var body;
+        var question = ($id('srcaQuestion').value || '').trim();
+        var useLlm = !!$id('srcaUseLlm').checked;
+        try {
+          if (state.mode === 'fetch') {
+            var cid = ($id('srcaConnId').value || '').trim();
+            if (!cid) throw new Error('connection ID is required');
+            body = {
+              mode: 'fetch',
+              connection_id: cid,
+              correlate: !!$id('srcaCorrelate').checked,
+              correlate_window_minutes: parseInt($id('srcaWindow').value || '10', 10) || 10,
+              include_stream_server: !!$id('srcaIncludeSs').checked,
+              question: question,
+              use_llm: useLlm,
+            };
+          } else {
+            var be = parsePasteJson($id('srcaPasteBe').value, 'Bot Engine logs');
+            var im = parsePasteJson($id('srcaPasteIm').value, 'Integration Manager logs');
+            var ss = parsePasteJson($id('srcaPasteSs').value, 'Stream Server logs');
+            if (!be.length && !im.length && !ss.length) throw new Error('paste at least one of BE / IM / SS logs');
+            body = {
+              mode: 'paste',
+              connection_id: ($id('srcaPasteCid').value || '').trim(),
+              bot_engine_logs: be,
+              integration_manager_logs: im,
+              stream_server_logs: ss,
+              question: question,
+              use_llm: useLlm,
+            };
+          }
+        } catch (e) {
+          showErr(e.message || String(e));
+          setHint('');
+          btn.disabled = false;
+          btn.textContent = prevText;
+          return;
+        }
+
+        var phaseHint = state.mode === 'fetch'
+          ? 'Querying OpenSearch (BE + IM' + (body.include_stream_server ? ' + SS' : '') + ', parallel)… can take 30–90s'
+          : 'Running detectors and renderers…';
+        _startElapsed(function(s) {
+          setHint(phaseHint + '  ·  ' + s + 's elapsed');
+        });
+
+        fetch('/api/session-rca/analyse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+          .then(function(r) { return r.json().then(function(j) { return { status: r.status, body: j }; }); })
+          .then(function(o) {
+            _stopElapsed();
+            btn.disabled = false;
+            btn.textContent = prevText;
+            setHint('');
+            if (!o.body || !o.body.ok) {
+              showErr((o.body && o.body.error) || ('HTTP ' + o.status));
+              return;
+            }
+            renderResult(o.body);
+          })
+          .catch(function(e) {
+            _stopElapsed();
+            btn.disabled = false;
+            btn.textContent = prevText;
+            setHint('');
+            showErr(e.message || String(e));
+          });
+      }
+
+      function copyCurrent() {
+        if (!state.result) return;
+        var key = state.currentDraft === 'rca' ? 'rca_markdown' : (state.currentDraft === 'client' ? 'client_markdown' : 'internal_markdown');
+        var text = (state.result.drafts && state.result.drafts[key]) || '';
+        if (!text) return;
+        var btn = $id('srcaCopyBtn');
+        var prev = btn.textContent;
+        try {
+          navigator.clipboard.writeText(text).then(function() {
+            btn.textContent = 'Copied!';
+            setTimeout(function() { btn.textContent = prev; }, 1200);
+          }, function() {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); btn.textContent = 'Copied!'; setTimeout(function() { btn.textContent = prev; }, 1200); }
+            catch (_) { btn.textContent = 'Copy failed'; setTimeout(function() { btn.textContent = prev; }, 1200); }
+            document.body.removeChild(ta);
+          });
+        } catch (_) { /* no-op */ }
+      }
+
+      var bound = false;
+      window._refreshSrca = function() {
+        if (bound) return;
+        var run = $id('srcaAnalyseBtn');
+        // DOM not ready yet (this can happen if showView is called from initRouter
+        // before this IIFE has executed). The router invokes us again on view-show,
+        // and we also self-invoke at the bottom of this IIFE — at that point
+        // the view nodes are guaranteed to be in the document.
+        if (!run) return;
+        bound = true;
+        var tabFetch = $id('srcaTabFetch');
+        var tabPaste = $id('srcaTabPaste');
+        if (tabFetch) tabFetch.addEventListener('click', function() { switchMode('fetch'); });
+        if (tabPaste) tabPaste.addEventListener('click', function() { switchMode('paste'); });
+        ['rca', 'client', 'internal'].forEach(function(k) {
+          var b = document.querySelector('[data-srca-tab="' + k + '"]');
+          if (b) b.addEventListener('click', function() { switchDraft(k); });
+        });
+        run.addEventListener('click', runAnalyse);
+        var conn = $id('srcaConnId');
+        if (conn) conn.addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) runAnalyse(); });
+        var qta = $id('srcaQuestion');
+        if (qta) qta.addEventListener('keydown', function(e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runAnalyse(); });
+        var copy = $id('srcaCopyBtn');
+        if (copy) copy.addEventListener('click', copyCurrent);
+        try { console.log('[session-rca] listeners bound'); } catch (_) {}
+      };
+      // Self-bind on script load: handles the case where the user lands on
+      // #session-rca directly (initRouter calls showView before this IIFE
+      // has registered window._refreshSrca, so the listeners would otherwise
+      // never get attached and the Analyse button would do nothing).
+      window._refreshSrca();
     })();
 
   </script>

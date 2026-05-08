@@ -27,3 +27,7 @@ data/*.db
 # Ad-hoc OpenSearch log dumps
 connection-*-logs.json
 context-*-logs.json
+
+# Local-only test fixtures (real customer logs — never commit)
+tests/fixtures/auth_rca/
+

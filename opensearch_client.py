@@ -786,6 +786,133 @@ def _extract_integration_manager_connection_id(src: dict) -> str:
         return ""
 
 
+def _summarize_be_payload(src: dict) -> str:
+    """Build a one-line semantic summary of a Bot Engine `integration-manager-client` log.
+
+    Looks at ``rawLog.data.{apiName,methodName,data,response,error}`` and produces a short
+    human-readable string the LLM (and humans) can rely on without re-reading the raw
+    payload. Returns "" when nothing meaningful can be extracted.
+
+    Examples produced:
+      - ``message.create email -> callcenter@mccoyfcu.org from no-reply@mccoyfcu.org subject="..." ses-id=0101019df8e4ddd2-176db203...``
+      - ``message.create sms -> +18184956788 message-id=SM1234...``
+      - ``message.validate phone-lookup +18184956788 -> isVoip=true isMobile=false isLandline=false (224.2ms)``
+      - ``auth.info session-bootstrap``
+    """
+    raw = src.get("rawLog") if isinstance(src.get("rawLog"), dict) else {}
+    d = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+    api = str(d.get("apiName") or "").strip()
+    meth = str(d.get("methodName") or "").strip()
+    if not api and not meth:
+        return ""
+    inner = d.get("data") if isinstance(d.get("data"), dict) else {}
+    resp = d.get("response") if isinstance(d.get("response"), dict) else {}
+    dur_ms = d.get("time")
+    bits: list[str] = []
+    head = f"{api}.{meth}".strip(".")
+
+    if api == "message" and meth == "create":
+        msg_in = inner.get("message") if isinstance(inner.get("message"), dict) else {}
+        msg_out = resp.get("message") if isinstance(resp.get("message"), dict) else {}
+        kind = str(msg_out.get("type") or msg_in.get("type") or "").lower() or "notification"
+        to_addr = msg_out.get("to") or msg_in.get("to") or ""
+        from_addr = msg_out.get("from") or msg_in.get("from") or ""
+        subject = msg_in.get("subject") or msg_out.get("subject") or ""
+        provider_id = msg_out.get("id") or ""
+        body = msg_in.get("body") or msg_out.get("body") or ""
+        bits.append(f"{head} {kind}")
+        if to_addr:
+            bits.append(f"-> {to_addr}")
+        if from_addr:
+            bits.append(f"from {from_addr}")
+        if subject:
+            bits.append(f'subject="{str(subject)[:80]}"')
+        if provider_id:
+            short_id = str(provider_id).strip("<>").split("@")[0][:60]
+            label = "ses-id" if "amazonses" in str(provider_id).lower() else ("sid" if str(provider_id).startswith("SM") or str(provider_id).startswith("MM") else "provider-id")
+            bits.append(f"{label}={short_id}")
+        if body and len(bits) <= 3:
+            body_short = " ".join(str(body).split())[:80]
+            if body_short:
+                bits.append(f'body="{body_short}..."')
+    elif api == "message" and meth == "validate":
+        phone = inner.get("phoneNumber") or inner.get("phone") or ""
+        is_voip = resp.get("isVoip")
+        is_mobile = resp.get("isMobile")
+        is_landline = resp.get("isLandLine") if "isLandLine" in resp else resp.get("isLandline")
+        bits.append(f"{head} phone-lookup")
+        if phone:
+            bits.append(str(phone))
+        flags = []
+        if is_voip is not None:
+            flags.append(f"isVoip={str(is_voip).lower()}")
+        if is_mobile is not None:
+            flags.append(f"isMobile={str(is_mobile).lower()}")
+        if is_landline is not None:
+            flags.append(f"isLandline={str(is_landline).lower()}")
+        if flags:
+            bits.append("-> " + " ".join(flags))
+    elif api == "sms" and meth in ("create", "send"):
+        to_addr = (resp.get("to") if isinstance(resp, dict) else "") or inner.get("to") or ""
+        sid = (resp.get("sid") if isinstance(resp, dict) else "") or (resp.get("id") if isinstance(resp, dict) else "")
+        bits.append(f"{head} sms")
+        if to_addr:
+            bits.append(f"-> {to_addr}")
+        if sid:
+            bits.append(f"sid={str(sid)[:34]}")
+    elif api == "auth" and meth == "info":
+        bits.append(f"{head} session-bootstrap")
+    elif api or meth:
+        bits.append(head or "(unknown api)")
+
+    if dur_ms is not None:
+        try:
+            bits.append(f"({float(dur_ms):.0f}ms)")
+        except (TypeError, ValueError):
+            pass
+    err = d.get("error") if isinstance(d.get("error"), dict) else None
+    if err:
+        ec = err.get("code") or err.get("name") or ""
+        em = err.get("message") or ""
+        if ec or em:
+            bits.append(f"ERROR {ec or ''}: {str(em)[:160]}".strip())
+    return " ".join(bits).strip()
+
+
+def _summarize_im_payload(src: dict) -> str:
+    """One-line semantic summary of an Integration Manager log (IM-side, not BE-side)."""
+    raw = src.get("rawLog") if isinstance(src.get("rawLog"), dict) else {}
+    d = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+    module = str(raw.get("moduleName") or "").strip()
+    api = str(d.get("apiName") or "").strip()
+    meth = str(d.get("methodName") or "").strip()
+    msg = str(src.get("msg") or "").strip()
+    dur_ms = d.get("time")
+    bits: list[str] = []
+    head = ".".join(p for p in (api, meth) if p)
+    if head:
+        bits.append(head)
+    if module and module not in ("integration-manager",):
+        bits.append(f"[{module}]")
+    if msg and msg not in ("Controller Success", "SOAP API Success"):
+        bits.append(f'msg="{msg[:120]}"')
+    if dur_ms is not None:
+        try:
+            bits.append(f"({float(dur_ms):.0f}ms)")
+        except (TypeError, ValueError):
+            pass
+    err = d.get("error") if isinstance(d.get("error"), dict) else None
+    if err:
+        ec = err.get("code") or err.get("name") or ""
+        em = err.get("message") or ""
+        if ec or em:
+            bits.append(f"ERROR {ec or ''}: {str(em)[:160]}".strip())
+    status = d.get("statusCode")
+    if status is not None and not err:
+        bits.append(f"status={status}")
+    return " ".join(bits).strip()
+
+
 def _flatten_integration_manager_log(src: dict, doc_cid: str) -> dict[str, Any]:
     """Normalise an Integration Manager _source doc to the same shape as bot engine rows."""
     raw = src.get("rawLog") if isinstance(src.get("rawLog"), dict) else {}
@@ -817,6 +944,7 @@ def _flatten_integration_manager_log(src: dict, doc_cid: str) -> dict[str, Any]:
         "error_code": code,
         "error_stack": stack,
         "error_message": err_msg,
+        "payload_summary": _summarize_im_payload(src),
         "_raw": src,
     }
 
@@ -844,6 +972,7 @@ def query_bot_engine_default_logs(
     index: str | None = None,
     max_logs: int = 500,
     context_id: str | None = None,
+    max_window_minutes: int | None = None,
 ) -> dict[str, Any] | None:
     """
     Query bot engine default logs by Connection ID and/or Context ID.
@@ -904,7 +1033,14 @@ def query_bot_engine_default_logs(
     if uuid_dt:
         from datetime import timedelta
         window_start = (uuid_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        window_end = (uuid_dt + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        # Default upper bound is +2h to safely cover long calls / async callbacks.
+        # Callers that know their call is short (e.g. IVR auth flow) can pass
+        # ``max_window_minutes`` to tighten this and dramatically reduce the
+        # number of docs scanned in busy indexes.
+        upper_minutes = 120
+        if isinstance(max_window_minutes, int) and max_window_minutes > 0:
+            upper_minutes = min(upper_minutes, max_window_minutes)
+        window_end = (uuid_dt + timedelta(minutes=upper_minutes)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
         time_filter = {"range": {time_field: {"gte": window_start, "lte": window_end}}}
     elif time_minutes and time_minutes > 0:
         time_filter = _time_range(time_field, time_minutes)
@@ -980,6 +1116,7 @@ def query_bot_engine_default_logs(
                 "error_code": str(_get_nested(src, "rawLog.data.error.code") or _get_nested(src, "rawLog.data.status") or ""),
                 "error_stack": str(_get_nested(src, "rawLog.data.error.stack") or _get_nested(src, "rawLog.data.stack") or ""),
                 "error_message": str(_get_nested(src, "rawLog.data.error.message") or _get_nested(src, "rawLog.data.message") or ""),
+                "payload_summary": _summarize_be_payload(src),
                 "_raw": src,
             })
             if len(matched) >= max_logs:
@@ -1024,11 +1161,101 @@ def query_bot_engine_default_logs(
     return out
 
 
+def find_related_auth_connections(
+    user_phone: str,
+    tenant: str,
+    around_connection_id: str,
+    window_minutes: int = 10,
+    index: str | None = None,
+    max_results: int = 10,
+) -> list[str]:
+    """Find other connectionIds for the same caller, around a given UUIDv1 connectionId.
+
+    Searches the bot-engine default index for documents whose
+    ``rawLog.data.data.metadata.userPhoneNumber`` equals ``user_phone`` (raw,
+    e.g. ``+19548157330``) within ±``window_minutes`` of the timestamp embedded
+    in the UUIDv1 ``around_connection_id``. Optionally also requires the
+    tenant to match (``rawLog.tenantName`` / ``tenantName``).
+
+    Returns a de-duplicated list of distinct connectionIds (excluding
+    ``around_connection_id``), ordered by earliest occurrence ascending.
+    Used by the Auth-Failure RCA agent to auto-correlate retry/lockout calls.
+    """
+    if not user_phone or not around_connection_id:
+        return []
+    client = _get_client()
+    if not client:
+        return []
+    index_pattern = index or os.environ.get("OPENSEARCH_BOT_ENGINE_INDEX", "").strip()
+    if not index_pattern:
+        return []
+
+    uuid_dt = _uuid1_to_datetime(around_connection_id)
+    if not uuid_dt:
+        return []
+    from datetime import timedelta
+    start = (uuid_dt - timedelta(minutes=window_minutes)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    end = (uuid_dt + timedelta(minutes=window_minutes)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    time_field = os.environ.get("OPENSEARCH_TIME_FIELD", "@timestamp")
+
+    filters: list[dict[str, Any]] = [
+        {"range": {time_field: {"gte": start, "lte": end}}},
+        {"match_phrase": {"rawLog.data.data.metadata.userPhoneNumber": user_phone}},
+    ]
+    if tenant:
+        filters.append({
+            "bool": {
+                "should": [
+                    {"match_phrase": {"rawLog.tenantName": tenant}},
+                    {"match_phrase": {"tenantName": tenant}},
+                ],
+                "minimum_should_match": 1,
+            }
+        })
+
+    found: dict[str, str] = {}
+    search_after = None
+    scanned = 0
+    max_scan = 20000
+
+    while scanned < max_scan and len(found) < max_results + 5:
+        body: dict[str, Any] = {
+            "size": 1000,
+            "query": {"bool": {"filter": filters}},
+            "sort": [{time_field: {"order": "asc"}}, {"_id": "asc"}],
+        }
+        if search_after:
+            body["search_after"] = search_after
+        try:
+            res = client.search(index=index_pattern, body=body, ignore_unavailable=True)
+        except Exception:
+            break
+        hits = (res or {}).get("hits", {}).get("hits", [])
+        if not hits:
+            break
+        for h in hits:
+            src = h.get("_source") or {}
+            cid = _extract_connection_id(src)
+            if not cid or cid == around_connection_id:
+                continue
+            ts = str(_get_nested(src, "@timestamp") or src.get("@timestamp") or "")
+            if cid not in found or (ts and ts < found[cid]):
+                found[cid] = ts
+        scanned += len(hits)
+        search_after = hits[-1].get("sort")
+        if not search_after:
+            break
+
+    sorted_cids = sorted(found.keys(), key=lambda c: found.get(c) or "")
+    return sorted_cids[:max_results]
+
+
 def query_integration_manager_default_logs(
     connection_id: str,
     time_minutes: int | None = None,
     index: str | None = None,
     max_logs: int = 500,
+    max_window_minutes: int | None = None,
 ) -> dict[str, Any] | None:
     """
     Query Integration Manager default logs by connectionId (same scan strategy as
@@ -1058,7 +1285,10 @@ def query_integration_manager_default_logs(
     if uuid_dt:
         from datetime import timedelta
         window_start = (uuid_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        window_end = (uuid_dt + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        upper_minutes = 120
+        if isinstance(max_window_minutes, int) and max_window_minutes > 0:
+            upper_minutes = min(upper_minutes, max_window_minutes)
+        window_end = (uuid_dt + timedelta(minutes=upper_minutes)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
         time_filter = {"range": {time_field: {"gte": window_start, "lte": window_end}}}
     elif time_minutes and time_minutes > 0:
         time_filter = _time_range(time_field, time_minutes)
@@ -1385,6 +1615,230 @@ def check_stream_server_default_index() -> dict[str, Any]:
             out["fallback"] = True
             out["message"] = "Using OPENSEARCH_INDEX (set OPENSEARCH_STREAM_SERVER_INDEX to override)"
         return out
+    except Exception as e:
+        return {"configured": True, "connected": False, "index": index_pattern, "error": str(e)}
+
+
+def _flatten_nlp_server_log(src: dict, doc_cid: str) -> dict[str, Any]:
+    """Normalise an nlp-server _source doc to the same shape as bot-engine / IM / SS rows.
+
+    NLP-server records are flat (no rawLog wrapper). The interesting fields live at
+    top-level under _source: text (recognised input), action (selected
+    function/experience), action_data (extracted params/command), template_type
+    (function_active / top_level / function_initial), result.results[0].output (raw
+    LLM output), template_data (active experience + parameter), and metadata
+    (connection_id, request_id, session_id, tenant, etc.).
+    """
+    md = src.get("metadata") if isinstance(src.get("metadata"), dict) else {}
+    td = src.get("template_data") if isinstance(src.get("template_data"), dict) else {}
+    result = src.get("result") if isinstance(src.get("result"), dict) else {}
+
+    llm_output = ""
+    llm_time_ms: float | None = None
+    model_id = ""
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    if isinstance(result, dict):
+        results_list = result.get("results")
+        if isinstance(results_list, list) and results_list:
+            first = results_list[0]
+            if isinstance(first, dict):
+                llm_output = str(first.get("output") or "")
+                t = first.get("time")
+                if isinstance(t, (int, float)):
+                    llm_time_ms = float(t)
+        model_id = str(result.get("model_id") or "")
+        usage = result.get("usage")
+        if isinstance(usage, dict):
+            prompt_tokens = usage.get("prompt_tokens") if isinstance(usage.get("prompt_tokens"), int) else None
+            completion_tokens = usage.get("completion_tokens") if isinstance(usage.get("completion_tokens"), int) else None
+            total_tokens = usage.get("total_tokens") if isinstance(usage.get("total_tokens"), int) else None
+
+    action_data_str = ""
+    ad = src.get("action_data")
+    if ad is not None:
+        try:
+            import json as _json
+            action_data_str = _json.dumps(ad, ensure_ascii=False)
+        except Exception:
+            action_data_str = str(ad)
+
+    return {
+        "timestamp": _get_nested(src, "@timestamp") or src.get("@timestamp") or src.get("time") or "",
+        "level": str(src.get("level") or ""),
+        "tenant_name": str(md.get("tenant_name") or ""),
+        "agent_name": str(md.get("agent_name") or ""),
+        "connection_id": doc_cid or str(md.get("connection_id") or ""),
+        "session_id": str(md.get("session_id") or ""),
+        "request_id": str(src.get("request_id") or md.get("request_id") or ""),
+        "client_id": str(md.get("client_id") or ""),
+        "channel_code": str(md.get("channel_code") or ""),
+        "language_code": str(md.get("language_code") or ""),
+        "template_type": str(src.get("template_type") or ""),
+        "template_id": str(src.get("template_id") or ""),
+        "experience_id": str(td.get("experience_id") or ""),
+        "experience_name": str(td.get("experience_name") or ""),
+        "input_id": str(td.get("input_id") or ""),
+        "input_name": str(td.get("input_name") or ""),
+        "active_parameter": str(td.get("active_parameter") or ""),
+        "prompt": str(td.get("prompt") or ""),
+        "text": str(src.get("text") or ""),
+        "action": str(src.get("action") or ""),
+        "action_data": action_data_str,
+        "llm_output": llm_output,
+        "model_id": model_id,
+        "llm_time_ms": llm_time_ms,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "_raw": src,
+    }
+
+
+def query_nlp_server_default_logs(
+    connection_id: str | None = None,
+    request_id: str | None = None,
+    time_minutes: int | None = None,
+    index: str | None = None,
+    max_logs: int = 1000,
+    time_from: str | None = None,
+    time_to: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Query nlp-server default logs by ``metadata.connection_id`` and/or
+    ``metadata.request_id``. At least one of ``connection_id`` or ``request_id``
+    is required.
+
+    Like stream-server logs, ``metadata.connection_id`` and ``metadata.request_id``
+    are indexed and searchable, so this issues a direct ``match_phrase`` filter
+    rather than a full scan.
+
+    Time window:
+      - If ``time_from`` / ``time_to`` are provided, uses absolute boundaries.
+      - Else if ``connection_id`` is a UUIDv1, uses [-5m, +60m] derived from the
+        embedded timestamp (NLP turns happen within seconds of the BE auth call,
+        so a wide window is unnecessary).
+      - Else if ``time_minutes`` > 0, uses now-Xm to now.
+      - Else searches the last 30 days.
+
+    Returns None when ``OPENSEARCH_NLP_SERVER_INDEX`` is not set; otherwise
+    ``{ total, logs[], scanned }``.
+    """
+    cid = (connection_id or "").strip()
+    rid = (request_id or "").strip()
+    if not cid and not rid:
+        return {
+            "total": 0,
+            "logs": [],
+            "error": "connection_id or request_id is required",
+        }
+
+    client = _get_client()
+    if not client:
+        return None
+
+    index_pattern = index or os.environ.get("OPENSEARCH_NLP_SERVER_INDEX", "").strip()
+    if not index_pattern:
+        return None
+
+    time_field = os.environ.get("OPENSEARCH_TIME_FIELD", "@timestamp")
+    conn_field = os.environ.get(
+        "OPENSEARCH_NLP_SERVER_CONNECTION_FIELD",
+        "metadata.connection_id",
+    )
+    req_field = os.environ.get(
+        "OPENSEARCH_NLP_SERVER_REQUEST_FIELD",
+        "metadata.request_id",
+    )
+
+    time_filter: dict[str, Any] | None
+    if time_from and time_to:
+        time_filter = {"range": {time_field: {"gte": time_from, "lte": time_to}}}
+    else:
+        uuid_dt = _uuid1_to_datetime(cid) if cid else None
+        if uuid_dt:
+            from datetime import timedelta
+            window_start = (uuid_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            window_end = (uuid_dt + timedelta(minutes=60)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            time_filter = {"range": {time_field: {"gte": window_start, "lte": window_end}}}
+        elif time_minutes and time_minutes > 0:
+            time_filter = _time_range(time_field, time_minutes)
+        else:
+            time_filter = _time_range(time_field, 60 * 24 * 30)  # default: last 30 days
+
+    filters: list[dict[str, Any]] = [time_filter]
+    if cid:
+        filters.append({"match_phrase": {conn_field: cid}})
+    if rid:
+        filters.append({"match_phrase": {req_field: rid}})
+
+    fetch_size = min(max(1, int(max_logs or 1000)), 10000)
+    query_body: dict[str, Any] = {
+        "track_total_hits": True,
+        "size": fetch_size,
+        "query": {"bool": {"filter": filters}},
+        "sort": [{time_field: {"order": "asc"}}, {"_id": "asc"}],
+    }
+
+    long_timeout = _request_timeout(default=60.0)
+    try:
+        res = client.search(
+            index=index_pattern,
+            body=query_body,
+            ignore_unavailable=True,
+            request_timeout=long_timeout,
+        )
+    except Exception as exc:
+        try:
+            from opensearchpy.exceptions import ConnectionTimeout as _OSConnTimeout
+        except Exception:
+            _OSConnTimeout = None  # type: ignore
+        is_timeout = bool(_OSConnTimeout and isinstance(exc, _OSConnTimeout))
+        if not is_timeout:
+            is_timeout = "timed out" in str(exc).lower() or "ReadTimeoutError" in str(exc)
+        if is_timeout:
+            hint = (
+                f"OpenSearch read timed out after {long_timeout:.0f}s. "
+                "Narrow the time window or pass a Connection ID alongside Request ID."
+            )
+            return {"total": 0, "logs": [], "error": hint, "timeout": True}
+        return {"total": 0, "logs": [], "error": str(exc)}
+
+    hits = (res or {}).get("hits", {})
+    total = hits.get("total") or {}
+    if isinstance(total, dict):
+        total = total.get("value", 0)
+
+    matched: list[dict[str, Any]] = []
+    for h in hits.get("hits", []):
+        src = h.get("_source") or {}
+        doc_cid = str(_get_nested(src, conn_field) or "")
+        if not doc_cid and cid:
+            doc_cid = cid
+        matched.append(_flatten_nlp_server_log(src, doc_cid))
+
+    matched.sort(key=lambda l: l.get("timestamp") or "")
+
+    return {"total": total, "logs": matched, "scanned": len(hits.get("hits", []))}
+
+
+def check_nlp_server_default_index() -> dict[str, Any]:
+    """Check if the nlp-server default-logs index is configured and reachable."""
+    index_pattern = os.environ.get("OPENSEARCH_NLP_SERVER_INDEX", "").strip()
+    if not index_pattern:
+        return {
+            "configured": False,
+            "connected": False,
+            "message": "OPENSEARCH_NLP_SERVER_INDEX not set in .env",
+        }
+    client = _get_client()
+    if not client:
+        return {"configured": True, "connected": False, "message": "OpenSearch client not available"}
+    try:
+        res = client.count(index=index_pattern, body={"query": {"match_all": {}}}, ignore_unavailable=True)
+        count = res.get("count", 0)
+        return {"configured": True, "connected": True, "index": index_pattern, "doc_count": count}
     except Exception as e:
         return {"configured": True, "connected": False, "index": index_pattern, "error": str(e)}
 
